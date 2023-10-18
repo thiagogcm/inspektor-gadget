@@ -32,6 +32,7 @@ import (
 	gadgetcontext "github.com/inspektor-gadget/inspektor-gadget/pkg/gadget-context"
 	gadgetregistry "github.com/inspektor-gadget/inspektor-gadget/pkg/gadget-registry"
 	"github.com/inspektor-gadget/inspektor-gadget/pkg/gadget-service/api"
+	instancemanager "github.com/inspektor-gadget/inspektor-gadget/pkg/gadget-service/instance-manager"
 	"github.com/inspektor-gadget/inspektor-gadget/pkg/gadgets"
 	"github.com/inspektor-gadget/inspektor-gadget/pkg/logger"
 	"github.com/inspektor-gadget/inspektor-gadget/pkg/operators"
@@ -56,6 +57,7 @@ type RunConfig struct {
 type Service struct {
 	api.UnimplementedBuiltInGadgetManagerServer
 	api.UnimplementedGadgetManagerServer
+	instanceMgr       *instancemanager.Manager
 	listener          net.Listener
 	runtime           runtime.Runtime
 	logger            logger.Logger
@@ -63,8 +65,9 @@ type Service struct {
 	eventBufferLength uint64
 }
 
-func NewService(defaultLogger logger.Logger, length uint64) *Service {
+func NewService(defaultLogger logger.Logger, instanceMgr *instancemanager.Manager, length uint64) *Service {
 	return &Service{
+		instanceMgr:       instanceMgr,
 		servers:           map[*grpc.Server]struct{}{},
 		logger:            defaultLogger,
 		eventBufferLength: length,
@@ -323,6 +326,7 @@ func (s *Service) Run(runConfig RunConfig, serverOptions ...grpc.ServerOption) e
 	server := grpc.NewServer(serverOptions...)
 	api.RegisterBuiltInGadgetManagerServer(server, s)
 	api.RegisterGadgetManagerServer(server, s)
+	api.RegisterGadgetInstanceManagerServer(server, s.instanceMgr)
 
 	s.servers[server] = struct{}{}
 
