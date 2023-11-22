@@ -52,14 +52,14 @@ spec:
           livenessProbe:
             exec:
               command:
-                - /bin/gadgettracermanager
+                - /bin/gadgettracermanager-{{ include "gadget.namespace" . }}
                 - -liveness
             periodSeconds: 5
             timeoutSeconds: 2
           readinessProbe:
             exec:
               command:
-                - /bin/gadgettracermanager
+                - /bin/gadgettracermanager-{{ include "gadget.namespace" . }}
                 - -liveness
             periodSeconds: 5
             timeoutSeconds: 2

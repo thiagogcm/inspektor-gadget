@@ -132,14 +132,14 @@ spec:
           livenessProbe:
             exec:
               command:
-                - /bin/gadgettracermanager
+                - /bin/gadgettracermanager-gadget
                 - -liveness
             periodSeconds: 5
             timeoutSeconds: 2
           readinessProbe:
             exec:
               command:
-                - /bin/gadgettracermanager
+                - /bin/gadgettracermanager-gadget
                 - -liveness
             periodSeconds: 5
             timeoutSeconds: 2

@@ -308,15 +308,18 @@ func main() {
 		os.Remove(socket)
 	}
 
+	gadgetNamespace := os.Getenv("GADGET_NAMESPACE")
+	os.Rename("/bin/gadgettracermanager", "/bin/gadgettracermanager-"+gadgetNamespace)
+
 	args := []string{
-		"gadgettracermanager",
+		"gadgettracermanager-" + gadgetNamespace,
 		"-serve",
 		fmt.Sprintf("-hook-mode=%s", gadgetTracerManagerHookMode),
 		"-controller",
 		fmt.Sprintf("-fallback-podinformer=%s", os.Getenv("INSPEKTOR_GADGET_OPTION_FALLBACK_POD_INFORMER")),
 	}
 
-	err = syscall.Exec("/bin/gadgettracermanager", args, os.Environ())
+	err = syscall.Exec("/bin/gadgettracermanager-"+gadgetNamespace, args, os.Environ())
 	if err != nil {
 		log.Fatalf("exec'ing gadgettracermanager: %v", err)
 	}
