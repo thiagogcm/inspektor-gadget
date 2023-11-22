@@ -22,6 +22,7 @@ import (
 	"fmt"
 	"io/fs"
 	"os"
+	"path"
 	"path/filepath"
 	"regexp"
 	"strings"
@@ -189,7 +190,7 @@ func modifyNRIConfigSocketFile(plugin *nriv1.Plugin, namespace string) error {
 	return nil
 }
 
-func modifyNRIConfig(filepath string, namespace string) error {
+func modifyNRIConfig(filepath string, namespace string, nriGadgetName string) error {
 	confContent, err := os.ReadFile(filepath)
 	if err != nil {
 		return fmt.Errorf("reading %q: %w", filepath, err)
@@ -204,7 +205,7 @@ func modifyNRIConfig(filepath string, namespace string) error {
 		return fmt.Errorf("unexpected number of plugins. Expected 1, got %d", len(configList.Plugins))
 	}
 	nrigadgetPlugin := configList.Plugins[0]
-
+	nrigadgetPlugin.Type = nriGadgetName
 	err = modifyNRIConfigSocketFile(nrigadgetPlugin, namespace)
 	if err != nil {
 		return fmt.Errorf("modifying socket file field: %w", err)
@@ -230,13 +231,15 @@ func installNRIHooks() error {
 		return fmt.Errorf("creating %s: %w", destinationPath, err)
 	}
 
-	err = copyFile(destinationPath, "/opt/hooks/nri/nrigadget", 0o640)
+	nriGadgetName := fmt.Sprintf("%s-nrigadget", os.Getenv("GADGET_NAMESPACE"))
+
+	err = copyFile(path.Join(destinationPath, nriGadgetName), "/opt/hooks/nri/nrigadget", 0o640)
 	if err != nil {
 		return fmt.Errorf("copying: %w", err)
 	}
 
 	hostConfigPath := filepath.Join(host.HostRoot, "etc/nri/conf.json")
-	err = modifyNRIConfig("/opt/hooks/nri/conf.json", os.Getenv("GADGET_NAMESPACE"))
+	err = modifyNRIConfig("/opt/hooks/nri/conf.json", os.Getenv("GADGET_NAMESPACE"), nriGadgetName)
 	if err != nil {
 		return fmt.Errorf("modifying \"/opt/hooks/nri/conf.json\": %w", err)
 	}
@@ -250,7 +253,7 @@ func installNRIHooks() error {
 			return fmt.Errorf("unmarshalling JSON %s: %w", hostConfigPath, err)
 		}
 
-		configList.Plugins = append(configList.Plugins, &nriv1.Plugin{Type: "nrigadget"})
+		configList.Plugins = append(configList.Plugins, &nriv1.Plugin{Type: nriGadgetName})
 
 		content, err = json.Marshal(configList)
 		if err != nil {
