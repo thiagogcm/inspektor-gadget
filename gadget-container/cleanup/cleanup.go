@@ -16,33 +16,36 @@ package main
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
+	"path"
 	"path/filepath"
 
 	nriv1 "github.com/containerd/nri/types/v1"
 	log "github.com/sirupsen/logrus"
 
+	"github.com/inspektor-gadget/inspektor-gadget/pkg/gadgets"
 	"github.com/inspektor-gadget/inspektor-gadget/pkg/utils/host"
 )
 
 func removeCRIOHooks() {
-	for _, file := range []string{"ocihookgadget", "prestart.sh", "poststop.sh"} {
-		path := filepath.Join("/opt/hooks/oci", file)
-		hostPath := filepath.Join(host.HostRoot, path)
-		os.Remove(hostPath)
-	}
+	instanceDirname := os.Getenv("GADGET_NAMESPACE") + "-gadget"
+
+	os.RemoveAll(filepath.Join(host.HostRoot, "/opt/hooks/oci/", instanceDirname))
 
 	for _, file := range []string{"etc/containers/oci/hooks.d", "usr/share/containers/oci/hooks.d/"} {
 		hookPath := filepath.Join(host.HostRoot, file)
 		for _, config := range []string{"gadget-prestart.json", "gadget-poststop.json"} {
-			path := filepath.Join(hookPath, config)
+			path := filepath.Join(hookPath, fmt.Sprintf("%s-%s.json", instanceDirname, filepath.Base(config)))
 			os.Remove(path)
 		}
 	}
 }
 
 func removeNRIHooks() {
-	path := filepath.Join(host.HostRoot, "opt/nri/bin/nrigadget")
+	nriGadgetName := fmt.Sprintf("%s-nrigadget", os.Getenv("GADGET_NAMESPACE"))
+
+	path := filepath.Join(host.HostRoot, "opt/nri/bin", nriGadgetName)
 	os.Remove(path)
 
 	configPath := filepath.Join(host.HostRoot, "etc/nri/conf.json")
@@ -58,11 +61,11 @@ func removeNRIHooks() {
 	}
 
 	length := len(configList.Plugins)
-	if length == 1 && configList.Plugins[0].Type == "nrigadget" {
+	if length == 1 && configList.Plugins[0].Type == nriGadgetName {
 		os.Remove(configPath)
 	} else {
 		for i, plugin := range configList.Plugins {
-			if plugin.Type != "nrigadget" {
+			if plugin.Type != nriGadgetName {
 				continue
 			}
 
@@ -88,7 +91,7 @@ func main() {
 	removeCRIOHooks()
 	removeNRIHooks()
 
-	os.RemoveAll("/sys/fs/bpf/gadget/")
+	os.RemoveAll(path.Join(gadgets.PinBasePath, fmt.Sprintf("%s-gadget", os.Getenv("GADGET_NAMESPACE"))))
 	os.Remove("/run/gadgettracermanager.socket")
 
 	log.Infof("Cleanup completed")
