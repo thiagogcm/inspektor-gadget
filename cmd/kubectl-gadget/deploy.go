@@ -415,6 +415,8 @@ func runDeploy(cmd *cobra.Command, args []string) error {
 	if _, err = k8sClient.CoreV1().Secrets(gadgetNamespace).Get(context.TODO(), gadgetPullSecret, metav1.GetOptions{}); err == nil {
 		isPullSecretPresent = true
 	}
+	clusterRoleName := fmt.Sprintf("%s-%s", gadgetNamespace, utils.GadgetClusterRoleSuffix)
+	clusterRoleBindingName := fmt.Sprintf("%s-%s", gadgetNamespace, utils.GadgetClusterRoleBindingSuffix)
 
 	for _, object := range objects {
 		var currentGadgetDS *appsv1.DaemonSet
@@ -534,9 +536,17 @@ func runDeploy(cmd *cobra.Command, args []string) error {
 		if sa, isSa := object.(*v1.ServiceAccount); isSa {
 			sa.Namespace = gadgetNamespace
 		}
+		if cr, isCr := object.(*rbacv1.ClusterRole); isCr {
+			cr.Name = clusterRoleName
+		}
 		if crBinding, isCrBinding := object.(*rbacv1.ClusterRoleBinding); isCrBinding {
-			if len(crBinding.Subjects) == 1 {
-				crBinding.Subjects[0].Namespace = gadgetNamespace
+			for i := range crBinding.Subjects {
+				if crBinding.Subjects[i].Kind == "ServiceAccount" && crBinding.Subjects[i].Name == "gadget" {
+					crBinding.Name = clusterRoleBindingName
+					crBinding.RoleRef.Name = clusterRoleName
+					crBinding.Subjects[i].Namespace = gadgetNamespace
+					break
+				}
 			}
 		}
 		if role, isRole := object.(*rbacv1.Role); isRole {
