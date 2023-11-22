@@ -1029,7 +1029,7 @@ func genericStreams(
 		}
 		atomic.AddInt32(&streamCount, 1)
 		go func(nodeName, namespace, name string, index int) {
-			cmd := fmt.Sprintf("/bin/gadgettracermanager-gadget -call receive-stream -tracerid trace_%s_%s",
+			cmd := fmt.Sprintf("/bin/gadgettracermanager-gadget -socketfile /run/gadget.gadgettracermanager.socket -call receive-stream -tracerid trace_%s_%s",
 				namespace, name)
 			postProcess.OutStreams[index].Node = nodeName
 			err := ExecPod(client, nodeName, gadgetNamespace, cmd,

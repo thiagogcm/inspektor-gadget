@@ -91,8 +91,9 @@ func main() {
 	removeCRIOHooks()
 	removeNRIHooks()
 
-	os.RemoveAll(path.Join(gadgets.PinBasePath, fmt.Sprintf("%s-gadget", os.Getenv("GADGET_NAMESPACE"))))
-	os.Remove("/run/gadgettracermanager.socket")
+	gadgetNamespace := os.Getenv("GADGET_NAMESPACE")
+	os.RemoveAll(path.Join(gadgets.PinBasePath, fmt.Sprintf("%s-gadget", gadgetNamespace)))
+	os.Remove(fmt.Sprintf("/run/%s.gadgettracermanager.socket", gadgetNamespace))
 
 	log.Infof("Cleanup completed")
 }

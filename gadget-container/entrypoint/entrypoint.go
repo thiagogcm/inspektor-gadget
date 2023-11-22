@@ -16,6 +16,7 @@ package main
 
 import (
 	"bufio"
+	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -100,6 +101,21 @@ func copyFile(destination, source string, filemode fs.FileMode) error {
 	return nil
 }
 
+func modifyCRIOScript(filepath string, namespace string) error {
+	confContent, err := os.ReadFile(filepath)
+	if err != nil {
+		return fmt.Errorf("reading %q: %w", filepath, err)
+	}
+	socketArg := fmt.Sprintf(" /opt/hooks/oci/ocihookgadget -socketfile %s -hook ", fmt.Sprintf("/run/%s.gadgettracermanager.socket", namespace))
+	confContent = bytes.ReplaceAll(confContent, []byte(" /opt/hooks/oci/ocihookgadget -hook "), []byte(socketArg))
+	confContent = bytes.ReplaceAll(confContent, []byte("test -f /run/gadgettracermanager.socket"), []byte(fmt.Sprintf("test -f /run/%s.gadgettracermanager.socket", namespace)))
+	err = os.WriteFile(filepath, confContent, 0o750)
+	if err != nil {
+		return fmt.Errorf("writing %s: %w", filepath, err)
+	}
+	return nil
+}
+
 func installCRIOHooks() error {
 	log.Info("Installing hooks scripts on host...")
 
@@ -112,9 +128,17 @@ func installCRIOHooks() error {
 	for _, file := range []string{"ocihookgadget", "prestart.sh", "poststop.sh"} {
 		log.Infof("Installing %s", file)
 
-		path := filepath.Join("/opt/hooks/oci", file)
-		destinationPath := filepath.Join(host.HostRoot, path)
-		err := copyFile(destinationPath, path, 0o750)
+		srcPath := filepath.Join("/opt/hooks/oci", file)
+
+		if strings.HasSuffix(file, ".sh") {
+			err := modifyCRIOScript(srcPath, os.Getenv("GADGET_NAMESPACE"))
+			if err != nil {
+				return fmt.Errorf("modifying %s: %w", srcPath, err)
+			}
+		}
+
+		destinationPath := filepath.Join(host.HostRoot, srcPath)
+		err := copyFile(destinationPath, srcPath, 0o750)
 		if err != nil {
 			return fmt.Errorf("copying: %w", err)
 		}
@@ -147,6 +171,56 @@ func installCRIOHooks() error {
 	return nil
 }
 
+func modifyNRIConfigSocketFile(plugin *nriv1.Plugin, namespace string) error {
+	type NRIGadgetConf struct {
+		SocketFile string `json:"socketFile"`
+	}
+	var nrigadgetConf NRIGadgetConf
+	err := json.Unmarshal(plugin.Conf, &nrigadgetConf)
+	if err != nil {
+		return fmt.Errorf("unmarshalling JSON: %w", err)
+	}
+	nrigadgetConf.SocketFile = fmt.Sprintf("/run/%s.gadgettracermanager.socket", namespace)
+	nrigadgetConfContent, err := json.Marshal(nrigadgetConf)
+	if err != nil {
+		return fmt.Errorf("marshalling JSON: %w", err)
+	}
+	plugin.Conf = nrigadgetConfContent
+	return nil
+}
+
+func modifyNRIConfig(filepath string, namespace string) error {
+	confContent, err := os.ReadFile(filepath)
+	if err != nil {
+		return fmt.Errorf("reading %q: %w", filepath, err)
+	}
+	var configList nriv1.ConfigList
+	err = json.Unmarshal(confContent, &configList)
+	if err != nil {
+		return fmt.Errorf("unmarshalling JSON: %w", err)
+	}
+
+	if len(configList.Plugins) != 1 {
+		return fmt.Errorf("unexpected number of plugins. Expected 1, got %d", len(configList.Plugins))
+	}
+	nrigadgetPlugin := configList.Plugins[0]
+
+	err = modifyNRIConfigSocketFile(nrigadgetPlugin, namespace)
+	if err != nil {
+		return fmt.Errorf("modifying socket file field: %w", err)
+	}
+
+	confContent, err = json.Marshal(configList)
+	if err != nil {
+		return fmt.Errorf("marshalling JSON: %w", err)
+	}
+	err = os.WriteFile(filepath, confContent, 0o750)
+	if err != nil {
+		return fmt.Errorf("writing %s: %w", filepath, err)
+	}
+	return nil
+}
+
 func installNRIHooks() error {
 	log.Info("Installing NRI hooks")
 
@@ -162,6 +236,11 @@ func installNRIHooks() error {
 	}
 
 	hostConfigPath := filepath.Join(host.HostRoot, "etc/nri/conf.json")
+	err = modifyNRIConfig("/opt/hooks/nri/conf.json", os.Getenv("GADGET_NAMESPACE"))
+	if err != nil {
+		return fmt.Errorf("modifying \"/opt/hooks/nri/conf.json\": %w", err)
+	}
+
 	content, err := os.ReadFile(hostConfigPath)
 	if err == nil {
 		var configList nriv1.ConfigList
@@ -304,11 +383,13 @@ func main() {
 		log.Fatalf("changing directory: %v", err)
 	}
 
-	for _, socket := range []string{"/run/gadgettracermanager.socket", "/run/gadgetservice.socket"} {
+	gadgetNamespace := os.Getenv("GADGET_NAMESPACE")
+
+	instanceSocket := fmt.Sprintf("/run/%s.gadgettracermanager.socket", gadgetNamespace)
+	for _, socket := range []string{"/run/gadgettracermanager.socket", "/run/gadgetservice.socket", instanceSocket} {
 		os.Remove(socket)
 	}
 
-	gadgetNamespace := os.Getenv("GADGET_NAMESPACE")
 	os.Rename("/bin/gadgettracermanager", "/bin/gadgettracermanager-"+gadgetNamespace)
 
 	args := []string{
@@ -317,6 +398,7 @@ func main() {
 		fmt.Sprintf("-hook-mode=%s", gadgetTracerManagerHookMode),
 		"-controller",
 		fmt.Sprintf("-fallback-podinformer=%s", os.Getenv("INSPEKTOR_GADGET_OPTION_FALLBACK_POD_INFORMER")),
+		fmt.Sprintf("-socketfile=%s", instanceSocket),
 	}
 
 	err = syscall.Exec("/bin/gadgettracermanager-"+gadgetNamespace, args, os.Environ())
