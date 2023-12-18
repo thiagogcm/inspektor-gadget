@@ -548,7 +548,7 @@ jobs:
         platform: [ amd64 ]
     steps:
       - name: Download gadget ${{ matrix.os }} ${{ matrix.platform }} container image as artifacts
-        uses: actions/download-artifact@v3
+        uses: actions/download-artifact@v4
         with:
           name: gadget-container-image-${{ matrix.os }}-${{ matrix.platform }}.tar
           path: ${{ github.workspace }}
@@ -1035,7 +1035,7 @@ jobs:
           go-version: ${{ env.GO_VERSION }}
           cache: true
       - name: Get ig-linux-amd64.tar.gz from artifact.
-        uses: actions/download-artifact@v3
+        uses: actions/download-artifact@v4
         with:
           name: ig-linux-amd64-tar-gz
           path: /home/runner/work/inspektor-gadget/
@@ -1088,7 +1088,7 @@ jobs:
           registry: ${{ env.REGISTRY }}
           container-image: ${{ env.CONTAINER_REPO }}
       - name: Get ig-linux-amd64.tar.gz from artifact.
-        uses: actions/download-artifact@v3
+        uses: actions/download-artifact@v4
         with:
           name: ig-linux-amd64-tar-gz
           path: /home/runner/work/inspektor-gadget/
@@ -1126,7 +1126,7 @@ jobs:
           go-version: ${{ env.GO_VERSION }}
           cache: true
       - name: Get ig-linux-amd64.tar.gz from artifact.
-        uses: actions/download-artifact@v3
+        uses: actions/download-artifact@v4
         with:
           name: ig-linux-amd64-tar-gz
           path: /home/runner/work/inspektor-gadget/
@@ -1330,7 +1330,7 @@ jobs:
         runtime: ${{ matrix.runtime }}
         multi-node: true
     - name: Get gadget-container-image-linux-amd64.tar from artifact.
-      uses: actions/download-artifact@v3
+      uses: actions/download-artifact@v4
       with:
         name: gadget-container-image-linux-amd64.tar
         path: /home/runner/work/inspektor-gadget/
@@ -1414,7 +1414,7 @@ jobs:
         name: Release ${{ github.ref_name }}
         draft: true
     - name: Get all artifacts.
-      uses: actions/download-artifact@v3
+      uses: actions/download-artifact@v4
     - name: Setup go
       uses: actions/setup-go@v5
       with:
