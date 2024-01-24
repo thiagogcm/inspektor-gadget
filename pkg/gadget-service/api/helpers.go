@@ -1,4 +1,4 @@
-// Copyright 2023 The Inspektor Gadget authors
+// Copyright 2023-2024 The Inspektor Gadget authors
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -17,6 +17,8 @@ package api
 import (
 	"fmt"
 	"net/url"
+
+	"github.com/inspektor-gadget/inspektor-gadget/pkg/params"
 )
 
 func ParseSocketAddress(addr string) (string, string, error) {
@@ -35,4 +37,42 @@ func ParseSocketAddress(addr string) (string, string, error) {
 		socketPath = socketURL.Host
 	}
 	return socketType, socketPath, nil
+}
+
+func ParamDescsToParams(descs params.ParamDescs, prefix string) (res []*Param) {
+	if descs == nil {
+		return
+	}
+	for _, desc := range descs {
+		res = append(res, &Param{
+			Key:            desc.Key,
+			Description:    desc.Description,
+			DefaultValue:   desc.DefaultValue,
+			TypeHint:       string(desc.TypeHint),
+			Title:          desc.Title,
+			Alias:          desc.Alias,
+			Tags:           desc.Tags,
+			ValueHint:      string(desc.ValueHint),
+			PossibleValues: desc.PossibleValues,
+			IsMandatory:    desc.IsMandatory,
+			Prefix:         prefix,
+		})
+	}
+	return
+}
+
+func ParamToParamDesc(p *Param) *params.ParamDesc {
+	return &params.ParamDesc{
+		Key:            p.Key,
+		Alias:          p.Alias,
+		Title:          p.Title,
+		DefaultValue:   p.DefaultValue,
+		Description:    p.Description,
+		IsMandatory:    p.IsMandatory,
+		Tags:           p.Tags,
+		Validator:      nil,
+		TypeHint:       params.TypeHint(p.TypeHint),
+		ValueHint:      params.ValueHint(p.ValueHint),
+		PossibleValues: p.PossibleValues,
+	}
 }
