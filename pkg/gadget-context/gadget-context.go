@@ -1,4 +1,4 @@
-// Copyright 2022-2023 The Inspektor Gadget authors
+// Copyright 2022-2024 The Inspektor Gadget authors
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -20,8 +20,15 @@ package gadgetcontext
 
 import (
 	"context"
+	"encoding/binary"
+	"fmt"
+	"maps"
+	"slices"
+	"sync"
 	"time"
 
+	"github.com/inspektor-gadget/inspektor-gadget/pkg/datasource"
+	"github.com/inspektor-gadget/inspektor-gadget/pkg/gadget-service/api"
 	"github.com/inspektor-gadget/inspektor-gadget/pkg/gadgets"
 	runTypes "github.com/inspektor-gadget/inspektor-gadget/pkg/gadgets/run/types"
 	"github.com/inspektor-gadget/inspektor-gadget/pkg/logger"
@@ -50,6 +57,16 @@ type GadgetContext struct {
 	resultError              error
 	timeout                  time.Duration
 	gadgetInfo               *runTypes.GadgetInfo
+
+	lock             sync.Mutex
+	router           datasource.Router
+	dataSources      map[string]datasource.DataSource
+	vars             map[string]any
+	params           []*api.Param
+	prepareCallbacks []func()
+	loaded           bool
+	imageName        string
+	metadata         []byte
 }
 
 func New(
@@ -83,6 +100,29 @@ func New(
 		operatorsParamCollection: operatorsParamCollection,
 		timeout:                  timeout,
 		gadgetInfo:               gadgetInfo,
+
+		dataSources: make(map[string]datasource.DataSource),
+		vars:        make(map[string]any),
+	}
+}
+
+func NewOCI(
+	ctx context.Context,
+	imageName string,
+	runtimeParams *params.Params,
+	logger logger.Logger,
+) *GadgetContext {
+	gCtx, cancel := context.WithCancel(ctx)
+	return &GadgetContext{
+		ctx:           gCtx,
+		cancel:        cancel,
+		args:          []string{},
+		logger:        logger,
+		runtimeParams: runtimeParams,
+
+		imageName:   imageName,
+		dataSources: make(map[string]datasource.DataSource),
+		vars:        make(map[string]any),
 	}
 }
 
@@ -140,6 +180,123 @@ func (c *GadgetContext) Timeout() time.Duration {
 
 func (c *GadgetContext) GadgetInfo() *runTypes.GadgetInfo {
 	return c.gadgetInfo
+}
+
+func (c *GadgetContext) ImageName() string {
+	return c.imageName
+}
+
+func (c *GadgetContext) RegisterDataSource(t datasource.Type, name string) (datasource.DataSource, error) {
+	ds := datasource.New(t, name)
+	c.dataSources[name] = ds
+	return ds, nil
+}
+
+func (c *GadgetContext) GetDataSources() map[string]datasource.DataSource {
+	return maps.Clone(c.dataSources)
+}
+
+func (c *GadgetContext) SetRouter(router datasource.Router) {
+	c.router = router
+}
+
+func (c *GadgetContext) GetSinkForDataSource(source datasource.DataSource) datasource.Sink {
+	if c.router == nil {
+		return nil
+	}
+	return c.router.GetSinkForDataSource(source)
+}
+
+func (c *GadgetContext) OnPrepare(cb func()) {
+	c.lock.Lock()
+	defer c.lock.Unlock()
+	c.prepareCallbacks = append(c.prepareCallbacks, cb)
+}
+
+func (c *GadgetContext) CallPrepareCallbacks() {
+	// Make a copy of prepareCallbacks first, so we're out of the lock afterward, since
+	// callbacks might need locks as well
+	c.lock.Lock()
+	cbs := slices.Clone(c.prepareCallbacks)
+	c.lock.Unlock()
+	for _, p := range cbs {
+		p()
+	}
+}
+
+func (c *GadgetContext) SetVar(varName string, value any) {
+	c.vars[varName] = value
+}
+
+func (c *GadgetContext) GetVar(varName string) (any, bool) {
+	res, ok := c.vars[varName]
+	return res, ok
+}
+
+func (c *GadgetContext) GetVars() map[string]any {
+	return maps.Clone(c.vars)
+}
+
+func (c *GadgetContext) Params() []*api.Param {
+	return slices.Clone(c.params)
+}
+
+func (c *GadgetContext) SetParams(params []*api.Param) {
+	c.params = slices.Clone(params)
+}
+
+func (c *GadgetContext) SetMetadata(m []byte) {
+	c.metadata = m
+}
+
+func (c *GadgetContext) SerializeGadgetInfo() (*api.GadgetInfo, error) {
+	gi := &api.GadgetInfo{
+		Name:      "",
+		ImageName: c.ImageName(),
+		Metadata:  c.metadata,
+		Params:    c.params,
+	}
+
+	for _, ds := range c.GetDataSources() {
+		di := &api.DataSource{
+			Id:          0,
+			Name:        ds.Name(),
+			Fields:      ds.Fields(),
+			Tags:        ds.Tags(),
+			Annotations: ds.Annotations(),
+		}
+		if ds.ByteOrder() == binary.BigEndian {
+			di.Flags |= api.DataSourceFlagsBigEndian
+		}
+		gi.DataSources = append(gi.DataSources, di)
+	}
+
+	return gi, nil
+}
+
+func (c *GadgetContext) LoadGadgetInfo(info *api.GadgetInfo) error {
+	c.lock.Lock()
+	if c.loaded {
+		// TODO: verify that info matches what we previously loaded
+		c.lock.Unlock()
+		return nil
+	}
+
+	c.dataSources = make(map[string]datasource.DataSource)
+	for _, inds := range info.DataSources {
+		ds, err := datasource.NewFromAPI(inds)
+		if err != nil {
+			c.lock.Unlock()
+			return fmt.Errorf("creating DataSource from API: %w", err)
+		}
+		c.dataSources[inds.Name] = ds
+	}
+	c.params = info.Params
+	c.loaded = true
+	c.lock.Unlock()
+
+	c.CallPrepareCallbacks()
+	return nil
 }
 
 func WithTimeoutOrCancel(ctx context.Context, timeout time.Duration) (context.Context, context.CancelFunc) {
