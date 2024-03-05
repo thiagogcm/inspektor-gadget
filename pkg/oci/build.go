@@ -44,6 +44,7 @@ const (
 const (
 	eBPFObjectMediaType = "application/vnd.gadget.ebpf.program.v1+binary"
 	wasmObjectMediaType = "application/vnd.gadget.wasm.program.v1+binary"
+	btfgenMediaType     = "application/vnd.gadget.btfgen.v1+binary"
 	metadataMediaType   = "application/vnd.gadget.config.v1+yaml"
 )
 
@@ -52,6 +53,8 @@ type ObjectPath struct {
 	EBPF string
 	// Optional path to the Wasm file
 	Wasm string
+	// Optional path to tarball containing BTF files generated with btfgen
+	Btfgen string
 }
 
 type BuildGadgetImageOpts struct {
@@ -211,6 +214,14 @@ func createManifestForTarget(ctx context.Context, target oras.Target, metadataFi
 			return ocispec.Descriptor{}, fmt.Errorf("creating and pushing wasm descriptor: %w", err)
 		}
 		layerDescs = append(layerDescs, wasmDesc)
+	}
+
+	if paths.Btfgen != "" {
+		btfDesc, err := createLayerDesc(ctx, target, paths.Btfgen, btfgenMediaType)
+		if err != nil {
+			return ocispec.Descriptor{}, fmt.Errorf("creating and pushing btfgen descriptor: %w", err)
+		}
+		layerDescs = append(layerDescs, btfDesc)
 	}
 
 	var defDesc ocispec.Descriptor
