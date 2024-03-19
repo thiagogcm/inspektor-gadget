@@ -26,15 +26,101 @@ import (
 	"strings"
 	"sync"
 
+	"google.golang.org/protobuf/reflect/protoreflect"
+
 	"github.com/inspektor-gadget/inspektor-gadget/pkg/gadget-service/api"
 )
 
-type (
-	data  api.GadgetData
-	field api.Field
-)
+type gPayloadEvent api.GadgetPayloadEvent
 
-func (*data) private() {}
+func (e *gPayloadEvent) Raw() protoreflect.ProtoMessage {
+	return (*api.GadgetPayloadEvent)(e)
+}
+
+func (e *gPayloadEvent) Each(fn func(Payload) error) error {
+	return fn((*payload)(e.Payload))
+}
+
+func (e *gPayloadEvent) GetPayload() Payload {
+	return (*payload)(e.Payload)
+}
+
+type gPayloadArray struct {
+	*api.GadgetPayloadArray
+
+	// payloadSize is the size of each payload array. It is used to pre-allocate
+	// the payload array in the NewPayload method.
+	payloadSize uint32
+}
+
+func (a *gPayloadArray) Raw() protoreflect.ProtoMessage {
+	return (*api.GadgetPayloadArray)(a.GadgetPayloadArray)
+}
+
+func (a *gPayloadArray) Each(fn func(Payload) error) error {
+	for _, p := range a.Payloads {
+		if err := fn((*payload)(p)); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (a *gPayloadArray) New() Payload {
+	p := &api.Payload{
+		Data: make([][]byte, a.payloadSize),
+	}
+	for i := range p.Data {
+		p.Data[i] = make([]byte, 0)
+	}
+	return (*payload)(p)
+}
+
+func (a *gPayloadArray) Add(p Payload) {
+	a.Payloads = append(a.Payloads, (*api.Payload)(p.(*payload)))
+}
+
+type payload api.Payload
+
+func (p *payload) Set(index uint32, data []byte) {
+	if index >= uint32(len(p.Data)) {
+		return
+	}
+	p.Data[index] = data
+}
+
+func (p *payload) SetChunk(index uint32, offset uint32, size uint32, data []byte) {
+	if index >= uint32(len(p.Data)) {
+		return
+	}
+	if offset+size > uint32(len(p.Data[index])) {
+		return
+	}
+	copy(p.Data[index][offset:offset+size], data)
+}
+
+func (p *payload) Get(index uint32) []byte {
+	if index >= uint32(len(p.Data)) {
+		return nil
+	}
+	return p.Data[index]
+}
+
+func (p *payload) GetChunk(index uint32, offset uint32, size uint32) []byte {
+	if index >= uint32(len(p.Data)) {
+		return nil
+	}
+	if offset+size > uint32(len(p.Data[index])) {
+		return nil
+	}
+	return p.Data[index][offset : offset+size]
+}
+
+func (p *payload) TotalIndexes() uint32 {
+	return uint32(len(p.Data))
+}
+
+type field api.Field
 
 func (f *field) ReflectType() reflect.Type {
 	switch f.Kind {
@@ -126,14 +212,30 @@ func NewFromAPI(in *api.DataSource) (DataSource, error) {
 }
 
 func (ds *dataSource) registerPool() {
-	ds.dPool.New = func() any {
-		d := &data{
-			Payload: make([][]byte, ds.payloadCount),
+	switch ds.dType {
+	case TypeEvent:
+		ds.dPool.New = func() any {
+			gp := &gPayloadEvent{
+				Payload: &api.Payload{
+					Data: make([][]byte, ds.payloadCount),
+				},
+			}
+			for i := range gp.Payload.Data {
+				gp.Payload.Data[i] = make([]byte, 0)
+			}
+			return gp
 		}
-		for i := range d.Payload {
-			d.Payload[i] = make([]byte, 0)
+	case TypeArray:
+		ds.dPool.New = func() any {
+			// payloadSize will be used to pre-allocate the payload array in
+			// gPayloadArray.New().
+			return &gPayloadArray{
+				GadgetPayloadArray: &api.GadgetPayloadArray{
+					Payloads: make([]*api.Payload, 0),
+				},
+				payloadSize: ds.payloadCount,
+			}
 		}
-		return d
 	}
 }
 
@@ -145,8 +247,18 @@ func (ds *dataSource) Type() Type {
 	return ds.dType
 }
 
-func (ds *dataSource) NewData() Data {
-	return ds.dPool.Get().(Data)
+func (ds *dataSource) NewGadgetPayloadEvent() GadgetPayloadEvent {
+	if ds.dType != TypeEvent {
+		return nil
+	}
+	return ds.dPool.Get().(*gPayloadEvent)
+}
+
+func (ds *dataSource) NewGadgetPayloadArray() GadgetPayloadArray {
+	if ds.dType != TypeArray {
+		return nil
+	}
+	return ds.dPool.Get().(*gPayloadArray)
 }
 
 func (ds *dataSource) ByteOrder() binary.ByteOrder {
@@ -316,10 +428,10 @@ func (ds *dataSource) Subscribe(fn DataFunc, priority int) {
 	})
 }
 
-func (ds *dataSource) EmitAndRelease(d Data) error {
-	defer ds.dPool.Put(d)
+func (ds *dataSource) EmitAndRelease(gp GadgetPayload) error {
+	defer ds.dPool.Put(gp.Raw())
 	for _, sub := range ds.subscriptions {
-		err := sub.fn(ds, d)
+		err := sub.fn(ds, gp)
 		if err != nil {
 			return err
 		}
@@ -327,8 +439,8 @@ func (ds *dataSource) EmitAndRelease(d Data) error {
 	return nil
 }
 
-func (ds *dataSource) Release(d Data) {
-	ds.dPool.Put(d)
+func (ds *dataSource) Release(gp GadgetPayload) {
+	ds.dPool.Put(gp.Raw())
 }
 
 func (ds *dataSource) ReportLostData(ctr uint64) {
@@ -337,28 +449,30 @@ func (ds *dataSource) ReportLostData(ctr uint64) {
 
 func (ds *dataSource) IsRequestedField(fieldName string) bool {
 	return true
-	ds.lock.RLock()
-	defer ds.lock.RUnlock()
-	return ds.requestedFields[fieldName]
+	// ds.lock.RLock()
+	// defer ds.lock.RUnlock()
+	// return ds.requestedFields[fieldName]
 }
 
-func (ds *dataSource) Dump(xd Data, wr io.Writer) {
+func (ds *dataSource) Dump(gp GadgetPayload, wr io.Writer) {
 	ds.lock.RLock()
 	defer ds.lock.RUnlock()
 
-	d := xd.(*data)
-	for _, f := range ds.fields {
-		if f.Offs+f.Size > uint32(len(d.Payload[f.PayloadIndex])) {
-			fmt.Fprintf(wr, "%s (%d): ! invalid size\n", f.Name, f.Size)
-			continue
+	gp.Each(func(p Payload) error {
+		for _, f := range ds.fields {
+			if f.Offs+f.Size > uint32(len(p.Get(f.PayloadIndex))) {
+				fmt.Fprintf(wr, "%s (%d): ! invalid size\n", f.Name, f.Size)
+				continue
+			}
+			fmt.Fprintf(wr, "%s (%d) [%s]: ", f.Name, f.Size, strings.Join(f.Tags, " "))
+			if f.Offs > 0 || f.Size > 0 {
+				fmt.Fprintf(wr, "%v\n", p.GetChunk(f.PayloadIndex, f.Offs, f.Size))
+			} else {
+				fmt.Fprintf(wr, "%v\n", p.Get(f.PayloadIndex))
+			}
 		}
-		fmt.Fprintf(wr, "%s (%d) [%s]: ", f.Name, f.Size, strings.Join(f.Tags, " "))
-		if f.Offs > 0 || f.Size > 0 {
-			fmt.Fprintf(wr, "%v\n", d.Payload[f.PayloadIndex][f.Offs:f.Offs+f.Size])
-		} else {
-			fmt.Fprintf(wr, "%v\n", d.Payload[f.PayloadIndex])
-		}
-	}
+		return nil
+	})
 }
 
 func (ds *dataSource) Fields() []*api.Field {

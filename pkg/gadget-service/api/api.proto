@@ -79,7 +79,7 @@ message GadgetEvent {
   // Types are specified in consts.go. Upper 16 bits are used for log severity levels
   uint32 type = 1;
   uint32 seq = 2;
-  bytes payload = 3;
+  bytes payload = 3; // For EventTypeGadgetPayload, this is either a GadgetPayloadEvent or GadgetPayloadArray
   uint32 dataSourceID = 4;
 }
 
@@ -107,10 +107,20 @@ message InfoResponse {
   bool experimental = 3;
 }
 
-message GadgetData {
+message Payload {
+  repeated bytes data = 1;
+}
+
+message GadgetPayloadEvent {
   string node = 1;
   uint32 seq = 2;
-  repeated bytes payload = 3;
+  Payload payload = 3;
+}
+
+message GadgetPayloadArray {
+  string node = 1;
+  uint32 seq = 2;
+  repeated Payload payloads = 3;
 }
 
 message Param {

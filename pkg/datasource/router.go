@@ -18,4 +18,4 @@ type Router interface {
 	GetSinkForDataSource(DataSource) Sink
 }
 
-type Sink func(source DataSource, data Data)
+type Sink func(source DataSource, data GadgetPayload)

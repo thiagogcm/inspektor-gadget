@@ -100,7 +100,7 @@ func (f *formattersOperator) InstantiateDataOperator(gadgetCtx operators.GadgetC
 type converter struct {
 	name     string
 	src      datasource.FieldAccessor
-	replacer func(datasource.Data) error
+	replacer func(datasource.Payload) error
 	priority int
 }
 
@@ -111,7 +111,7 @@ type replacer struct {
 	selectors []string
 
 	// replace will be called for incoming data with the source and target fields set
-	replace func(datasource.DataSource, datasource.FieldAccessor) (func(datasource.Data) error, error)
+	replace func(datasource.DataSource, datasource.FieldAccessor) (func(datasource.Payload) error, error)
 
 	// priority to be used when subscribing to the DataSource
 	priority int
@@ -122,7 +122,7 @@ var replacers = []replacer{
 	{
 		name:      "timestamp",
 		selectors: []string{"type:" + TimestampTypeName},
-		replace: func(ds datasource.DataSource, in datasource.FieldAccessor) (func(data datasource.Data) error, error) {
+		replace: func(ds datasource.DataSource, in datasource.FieldAccessor) (func(p datasource.Payload) error, error) {
 			// Read annotations to allow user-defined behavior; this needs to be documented // TODO
 			annotations := in.Annotations()
 
@@ -149,8 +149,8 @@ var replacers = []replacer{
 				return nil, nil
 			}
 
-			return func(data datasource.Data) error {
-				inBytes := in.Get(data)
+			return func(p datasource.Payload) error {
+				inBytes := in.Get(p)
 				switch len(inBytes) {
 				default:
 					return nil
@@ -159,7 +159,7 @@ var replacers = []replacer{
 					correctedTime := gadgets.WallTimeFromBootTime(ds.ByteOrder().Uint64(inBytes))
 					ds.ByteOrder().PutUint64(inBytes, uint64(correctedTime))
 					t := time.Unix(0, int64(correctedTime))
-					return out.Set(data, []byte(t.Format(timestampFormat)))
+					return out.Set(p, []byte(t.Format(timestampFormat)))
 				}
 			}, nil
 		},
@@ -168,7 +168,7 @@ var replacers = []replacer{
 	{
 		name:      "l3endpoint",
 		selectors: []string{"type:" + L3EndpointTypeName},
-		replace: func(ds datasource.DataSource, in datasource.FieldAccessor) (func(data datasource.Data) error, error) {
+		replace: func(ds datasource.DataSource, in datasource.FieldAccessor) (func(p datasource.Payload) error, error) {
 			// We do some length checks in here - since we expect the in field to be part of an eBPF struct that
 			// is always sized statically, we can avoid checking the individual entries later on.
 			in.SetHidden(true)
@@ -187,18 +187,18 @@ var replacers = []replacer{
 			if err != nil {
 				return nil, fmt.Errorf("adding string field: %w", err)
 			}
-			return func(entry datasource.Data) error {
-				ip := ips[0].Get(entry)
-				v := versions[0].Get(entry)
+			return func(p datasource.Payload) error {
+				ip := ips[0].Get(p)
+				v := versions[0].Get(p)
 				if len(v) != 1 {
 					return nil
 				}
 				var err error
 				switch v[0] {
 				case 4:
-					err = out.Set(entry, []byte(net.IP(ip[:4]).String()))
+					err = out.Set(p, []byte(net.IP(ip[:4]).String()))
 				case 6:
-					err = out.Set(entry, []byte(net.IP(ip).String()))
+					err = out.Set(p, []byte(net.IP(ip).String()))
 				default:
 					return fmt.Errorf("invalid IP version for l3endpoint")
 				}
@@ -210,7 +210,7 @@ var replacers = []replacer{
 	{
 		name:      "l4endpoint",
 		selectors: []string{"type:" + L4EndpointTypeName},
-		replace: func(ds datasource.DataSource, in datasource.FieldAccessor) (func(data datasource.Data) error, error) {
+		replace: func(ds datasource.DataSource, in datasource.FieldAccessor) (func(p datasource.Payload) error, error) {
 			// We do some length checks in here - since we expect the in field to be part of an eBPF struct that
 			// is always sized statically, we can avoid checking the individual entries later on.
 			in.SetHidden(true)
@@ -235,9 +235,9 @@ var replacers = []replacer{
 			if err != nil {
 				return nil, fmt.Errorf("adding string field: %w", err)
 			}
-			return func(entry datasource.Data) error {
-				port := binary.BigEndian.Uint16(ports[0].Get(entry))
-				out.Set(entry, []byte(fmt.Sprintf("%s:%d", string(l3strings[0].Get(entry)), port)))
+			return func(p datasource.Payload) error {
+				port := binary.BigEndian.Uint16(ports[0].Get(p))
+				out.Set(p, []byte(fmt.Sprintf("%s:%d", string(l3strings[0].Get(p)), port)))
 				return nil
 			}, nil
 		},
@@ -265,8 +265,10 @@ func (f *formattersOperatorInstance) Prepare(gadgetCtx operators.GadgetContext, 
 	for ds, converters := range f.converters {
 		for _, c := range converters {
 			conv := c
-			ds.Subscribe(func(ds datasource.DataSource, data datasource.Data) error {
-				return conv.replacer(data)
+			ds.Subscribe(func(ds datasource.DataSource, gp datasource.GadgetPayload) error {
+				return gp.Each(func(p datasource.Payload) error {
+					return conv.replacer(p)
+				})
 			}, conv.priority)
 		}
 	}

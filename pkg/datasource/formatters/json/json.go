@@ -28,7 +28,7 @@ import (
 
 type Formatter struct {
 	ds                datasource.DataSource
-	fns               []func(e *encodeState, data datasource.Data)
+	fns               []func(*encodeState, datasource.Payload)
 	fields            []string
 	showFields        map[string]struct{}
 	hideFields        map[string]struct{}
@@ -66,17 +66,17 @@ func (f *Formatter) init() {
 		}
 	}
 
-	f.fns = append(f.fns, func(e *encodeState, data datasource.Data) {
+	f.fns = append(f.fns, func(e *encodeState, p datasource.Payload) {
 		e.Write([]byte("{"))
 	})
 	subFieldFuncs, _ := f.addSubFields(nil, "")
 	f.fns = append(f.fns, subFieldFuncs...)
-	f.fns = append(f.fns, func(e *encodeState, data datasource.Data) {
+	f.fns = append(f.fns, func(e *encodeState, p datasource.Payload) {
 		e.Write([]byte("}"))
 	})
 }
 
-func (f *Formatter) addSubFields(accessors []datasource.FieldAccessor, prefix string) (fns []func(*encodeState, datasource.Data), fieldCounter int) {
+func (f *Formatter) addSubFields(accessors []datasource.FieldAccessor, prefix string) (fns []func(*encodeState, datasource.Payload), fieldCounter int) {
 	if accessors == nil {
 		accessors = f.ds.Accessors(true)
 	}
@@ -86,7 +86,7 @@ func (f *Formatter) addSubFields(accessors []datasource.FieldAccessor, prefix st
 		accessor := acc
 		fullFieldName := prefix + accessor.Name()
 
-		var subFieldFuncs []func(state *encodeState, data datasource.Data)
+		var subFieldFuncs []func(state *encodeState, p datasource.Payload)
 		var subFieldCount int
 		subFields := accessor.SubFields()
 		if len(subFields) > 0 {
@@ -120,73 +120,73 @@ func (f *Formatter) addSubFields(accessors []datasource.FieldAccessor, prefix st
 		fieldCounter++
 		fieldName := []byte("\"" + accessor.Name() + "\":")
 		if ctr > 0 {
-			fns = append(fns, func(e *encodeState, data datasource.Data) {
+			fns = append(fns, func(e *encodeState, p datasource.Payload) {
 				e.Write([]byte(","))
 			})
 		}
 
 		// Field has subfields
 		if len(subFields) > 0 {
-			fns = append(fns, func(e *encodeState, data datasource.Data) {
+			fns = append(fns, func(e *encodeState, p datasource.Payload) {
 				e.Write(fieldName)
 				e.Write([]byte("{"))
 			})
 			fns = append(fns, subFieldFuncs...)
-			fns = append(fns, func(e *encodeState, data datasource.Data) {
+			fns = append(fns, func(e *encodeState, p datasource.Payload) {
 				e.Write([]byte("}"))
 			})
 			continue
 		}
 
-		var fn func(e *encodeState, data datasource.Data)
+		var fn func(e *encodeState, p datasource.Payload)
 		// Field doesn't have subfields
 		switch accessor.Type() {
 		case api.Kind_Int16:
-			fn = func(e *encodeState, data datasource.Data) {
-				b := strconv.AppendInt(e.scratch[:0], int64(int16(f.ds.ByteOrder().Uint16(accessor.Get(data)))), 10)
+			fn = func(e *encodeState, p datasource.Payload) {
+				b := strconv.AppendInt(e.scratch[:0], int64(int16(f.ds.ByteOrder().Uint16(accessor.Get(p)))), 10)
 				e.Write(b)
 			}
 		case api.Kind_Int32:
-			fn = func(e *encodeState, data datasource.Data) {
-				b := strconv.AppendInt(e.scratch[:0], int64(int32(f.ds.ByteOrder().Uint32(accessor.Get(data)))), 10)
+			fn = func(e *encodeState, p datasource.Payload) {
+				b := strconv.AppendInt(e.scratch[:0], int64(int32(f.ds.ByteOrder().Uint32(accessor.Get(p)))), 10)
 				e.Write(b)
 			}
 		case api.Kind_Int64:
-			fn = func(e *encodeState, data datasource.Data) {
-				b := strconv.AppendInt(e.scratch[:0], int64(f.ds.ByteOrder().Uint64(accessor.Get(data))), 10)
+			fn = func(e *encodeState, p datasource.Payload) {
+				b := strconv.AppendInt(e.scratch[:0], int64(f.ds.ByteOrder().Uint64(accessor.Get(p))), 10)
 				e.Write(b)
 			}
 		case api.Kind_Uint16:
-			fn = func(e *encodeState, data datasource.Data) {
-				b := strconv.AppendUint(e.scratch[:0], uint64(f.ds.ByteOrder().Uint16(accessor.Get(data))), 10)
+			fn = func(e *encodeState, p datasource.Payload) {
+				b := strconv.AppendUint(e.scratch[:0], uint64(f.ds.ByteOrder().Uint16(accessor.Get(p))), 10)
 				e.Write(b)
 			}
 		case api.Kind_Uint32:
-			fn = func(e *encodeState, data datasource.Data) {
-				b := strconv.AppendUint(e.scratch[:0], uint64(f.ds.ByteOrder().Uint32(accessor.Get(data))), 10)
+			fn = func(e *encodeState, p datasource.Payload) {
+				b := strconv.AppendUint(e.scratch[:0], uint64(f.ds.ByteOrder().Uint32(accessor.Get(p))), 10)
 				e.Write(b)
 			}
 		case api.Kind_Uint64:
-			fn = func(e *encodeState, data datasource.Data) {
-				b := strconv.AppendUint(e.scratch[:0], f.ds.ByteOrder().Uint64(accessor.Get(data)), 10)
+			fn = func(e *encodeState, p datasource.Payload) {
+				b := strconv.AppendUint(e.scratch[:0], f.ds.ByteOrder().Uint64(accessor.Get(p)), 10)
 				e.Write(b)
 			}
 		case api.Kind_Float32:
-			fn = func(e *encodeState, data datasource.Data) {
-				floatEncoder(32).writeFloat(e, float64(math.Float32frombits(f.ds.ByteOrder().Uint32(accessor.Get(data)))))
+			fn = func(e *encodeState, p datasource.Payload) {
+				floatEncoder(32).writeFloat(e, float64(math.Float32frombits(f.ds.ByteOrder().Uint32(accessor.Get(p)))))
 			}
 		case api.Kind_Float64:
-			fn = func(e *encodeState, data datasource.Data) {
-				floatEncoder(32).writeFloat(e, math.Float64frombits(f.ds.ByteOrder().Uint64(accessor.Get(data))))
+			fn = func(e *encodeState, p datasource.Payload) {
+				floatEncoder(32).writeFloat(e, math.Float64frombits(f.ds.ByteOrder().Uint64(accessor.Get(p))))
 			}
 		case api.Kind_String:
-			fn = func(e *encodeState, data datasource.Data) {
-				writeString(e, string(accessor.Get(data)))
+			fn = func(e *encodeState, p datasource.Payload) {
+				writeString(e, string(accessor.Get(p)))
 			}
 		case api.Kind_Bool:
-			fn = func(e *encodeState, data datasource.Data) {
+			fn = func(e *encodeState, p datasource.Payload) {
 				// handle arbitrary length bools
-				for b := range accessor.Get(data) {
+				for b := range accessor.Get(p) {
 					if b != 0 {
 						e.WriteString("true")
 						return
@@ -195,24 +195,24 @@ func (f *Formatter) addSubFields(accessors []datasource.FieldAccessor, prefix st
 				e.WriteString("false")
 			}
 		default:
-			fn = func(e *encodeState, data datasource.Data) {
-				writeString(e, gadgets.FromCString(accessor.Get(data)))
+			fn = func(e *encodeState, p datasource.Payload) {
+				writeString(e, gadgets.FromCString(accessor.Get(p)))
 			}
 		}
-		fns = append(fns, func(e *encodeState, data datasource.Data) {
+		fns = append(fns, func(e *encodeState, p datasource.Payload) {
 			e.Write(fieldName)
-			fn(e, data)
+			fn(e, p)
 		})
 	}
 	return
 }
 
-func (f *Formatter) Marshal(data datasource.Data) []byte {
+func (f *Formatter) Marshal(p datasource.Payload) []byte {
 	e := bufpool.Get().(*encodeState)
 	e.Reset()
 	defer bufpool.Put(e)
 	for _, fn := range f.fns {
-		fn(e, data)
+		fn(e, p)
 	}
 	return e.Bytes()
 }

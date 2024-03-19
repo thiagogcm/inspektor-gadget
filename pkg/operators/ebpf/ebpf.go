@@ -94,11 +94,11 @@ func (o *ebpfOperator) InstantiateImageOperator(
 		containers: make(map[string]*containercollection.Container),
 
 		enums:      make(map[string]*btf.Enum),
-		converters: make(map[datasource.DataSource][]func(ds datasource.DataSource, data datasource.Data) error),
+		converters: make(map[datasource.DataSource][]func(datasource.DataSource, datasource.Payload) error),
 
 		vars: make(map[string]*ebpfVar),
 
-		networkTracers: make(map[string]*networktracer.Tracer[api.GadgetData]),
+		networkTracers: make(map[string]*networktracer.Tracer[api.GadgetPayloadEvent]),
 		tcHandlers:     make(map[string]*tchandler.Handler),
 
 		paramValues: paramValues,
@@ -138,7 +138,7 @@ type ebpfInstance struct {
 	params       map[string]*api.Param
 	paramValues  map[string]string
 
-	networkTracers map[string]*networktracer.Tracer[api.GadgetData]
+	networkTracers map[string]*networktracer.Tracer[api.GadgetPayloadEvent]
 	tcHandlers     map[string]*tchandler.Handler
 
 	// Network interface to attach the TC programs to. If set, the gadget won't attach to any
@@ -154,7 +154,7 @@ type ebpfInstance struct {
 	containers map[string]*containercollection.Container
 
 	enums      map[string]*btf.Enum
-	converters map[datasource.DataSource][]func(ds datasource.DataSource, data datasource.Data) error
+	converters map[datasource.DataSource][]func(datasource.DataSource, datasource.Payload) error
 
 	gadgetCtx operators.GadgetContext
 }
@@ -296,7 +296,7 @@ func (i *ebpfInstance) register(gadgetCtx operators.GadgetContext) error {
 		m.ds = ds
 	}
 	for _, m := range i.snapshotters {
-		ds, err := gadgetCtx.RegisterDataSource(datasource.TypeEvent, m.StructName)
+		ds, err := gadgetCtx.RegisterDataSource(datasource.TypeArray, m.StructName)
 		if err != nil {
 			return fmt.Errorf("adding tracer datasource: %w", err)
 		}
@@ -329,8 +329,10 @@ func (i *ebpfInstance) Prepare(gadgetCtx operators.GadgetContext) error {
 	for ds, converters := range i.converters {
 		for _, converter := range converters {
 			converter := converter
-			ds.Subscribe(func(ds datasource.DataSource, data datasource.Data) error {
-				return converter(ds, data)
+			ds.Subscribe(func(ds datasource.DataSource, gp datasource.GadgetPayload) error {
+				return gp.Each(func(p datasource.Payload) error {
+					return converter(ds, p)
+				})
 			}, 0)
 		}
 	}
@@ -340,7 +342,7 @@ func (i *ebpfInstance) Prepare(gadgetCtx operators.GadgetContext) error {
 		switch p.Type {
 		case ebpf.SocketFilter:
 			if strings.HasPrefix(p.SectionName, "socket") {
-				networkTracer, err := networktracer.NewTracer[api.GadgetData]()
+				networkTracer, err := networktracer.NewTracer[api.GadgetPayloadEvent]()
 				if err != nil {
 					i.Close()
 					return fmt.Errorf("creating network tracer: %w", err)

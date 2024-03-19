@@ -533,18 +533,20 @@ func (l *localManagerTraceWrapper) ParamDescs(gadgetCtx operators.GadgetContext)
 func (l *localManagerTraceWrapper) Prepare(gadgetCtx operators.GadgetContext, params *params.Params) error {
 	l.params = params
 	for ds, wrapper := range l.eventWrappers {
-		ds.Subscribe(func(ds datasource.DataSource, data datasource.Data) error {
-			wr := &compat.EventWrapper{
-				EventWrapperBase: wrapper,
-				Data:             data,
-			}
-			if wrapper.MntnsidAccessor != nil {
-				l.manager.igManager.ContainerCollection.EnrichEventByMntNs(wr)
-			}
-			if wrapper.NetnsidAccessor != nil {
-				l.manager.igManager.ContainerCollection.EnrichEventByNetNs(wr)
-			}
-			return nil
+		ds.Subscribe(func(ds datasource.DataSource, gp datasource.GadgetPayload) error {
+			return gp.Each(func(p datasource.Payload) error {
+				wr := &compat.EventWrapper{
+					EventWrapperBase: wrapper,
+					Payload:          p,
+				}
+				if wrapper.MntnsidAccessor != nil {
+					l.manager.igManager.ContainerCollection.EnrichEventByMntNs(wr)
+				}
+				if wrapper.NetnsidAccessor != nil {
+					l.manager.igManager.ContainerCollection.EnrichEventByNetNs(wr)
+				}
+				return nil
+			})
 		}, 0)
 	}
 	return nil

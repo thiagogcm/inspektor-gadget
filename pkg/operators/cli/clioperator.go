@@ -141,13 +141,15 @@ func (c *cliOperatorInstance) Prepare(gadgetCtx operators.GadgetContext, params 
 
 		jsonFormatter := json.New(ds)
 
-		ds.Subscribe(func(ds datasource.DataSource, data datasource.Data) error {
-			if false {
-				handler(datasource.NewDataTuple(ds, data))
-			}
-			fmt.Print(string(jsonFormatter.Marshal(data)))
-			fmt.Print("\n")
-			return nil
+		ds.Subscribe(func(ds datasource.DataSource, gp datasource.GadgetPayload) error {
+			return gp.Each(func(p datasource.Payload) error {
+				if false {
+					handler(datasource.NewDataTuple(ds, p))
+				}
+				fmt.Print(string(jsonFormatter.Marshal(p)))
+				fmt.Print("\n")
+				return nil
+			})
 		}, Priority)
 	}
 

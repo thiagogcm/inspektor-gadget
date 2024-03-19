@@ -58,7 +58,7 @@ func (i *ebpfInstance) initEnumConverter(gadgetCtx operators.GadgetContext) erro
 	}
 
 	for _, ds := range gadgetCtx.GetDataSources() {
-		var converters []func(ds datasource.DataSource, data datasource.Data) error
+		var converters []func(datasource.DataSource, datasource.Payload) error
 
 		for name, enum := range i.enums {
 			in := ds.GetField(name)
@@ -80,17 +80,17 @@ func (i *ebpfInstance) initEnumConverter(gadgetCtx operators.GadgetContext) erro
 				return err
 			}
 
-			converter := func(ds datasource.DataSource, data datasource.Data) error {
+			converter := func(ds datasource.DataSource, p datasource.Payload) error {
 				// TODO: lookup table?
-				inBytes := in.Get(data)
+				inBytes := in.Get(p)
 				val := byteSliceAsUint64(inBytes, enum.Signed, ds)
 				for _, v := range enum.Values {
 					if val == v.Value {
-						out.Set(data, []byte(v.Name))
+						out.Set(p, []byte(v.Name))
 						return nil
 					}
 				}
-				out.Set(data, []byte("UNKNOWN"))
+				out.Set(p, []byte("UNKNOWN"))
 				return nil
 			}
 

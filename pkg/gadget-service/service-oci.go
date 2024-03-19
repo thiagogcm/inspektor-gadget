@@ -139,12 +139,12 @@ func (s *Service) RunOCIGadget(runGadget api.OCIGadgetManager_RunOCIGadgetServer
 
 		for _, ds := range gadgetCtx.GetDataSources() {
 			dsID := dsLookup[ds.Name()]
-			ds.Subscribe(func(ds datasource.DataSource, data datasource.Data) error {
-				d, _ := proto.Marshal(data.Raw())
+			ds.Subscribe(func(ds datasource.DataSource, gp datasource.GadgetPayload) error {
+				p, _ := proto.Marshal(gp.Raw())
 
 				event := &api.GadgetEvent{
 					Type:         api.EventTypeGadgetPayload,
-					Payload:      d,
+					Payload:      p,
 					DataSourceID: dsID,
 				}
 

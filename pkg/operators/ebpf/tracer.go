@@ -135,7 +135,6 @@ func (t *Tracer) receiveEventsFromRingReader() error {
 		if err != nil {
 			return err
 		}
-		data := t.ds.NewData()
 		sample := rec.RawSample
 		if uint32(len(rec.RawSample)) < t.eventSize {
 			// event is truncated; we need to copy
@@ -150,15 +149,21 @@ func (t *Tracer) receiveEventsFromRingReader() error {
 			lastSlowLen = len(rec.RawSample)
 			sample = slowBuf
 		}
-		err = t.accessor.Set(data, sample)
-		if err != nil {
-			log.Printf("error setting buffer: %v", err)
-			t.ds.Release(data)
+
+		ev := t.ds.NewGadgetPayloadEvent()
+		if ev == nil {
+			log.Printf("error creating new event")
 			continue
 		}
-		err = t.ds.EmitAndRelease(data)
+		err = t.accessor.Set(ev.GetPayload(), sample)
 		if err != nil {
-			log.Printf("error emitting data: %v", err)
+			log.Printf("error setting event payload: %v", err)
+			t.ds.Release(ev)
+			continue
+		}
+		err = t.ds.EmitAndRelease(ev)
+		if err != nil {
+			log.Printf("error emitting event: %v", err)
 		}
 	}
 }
@@ -171,7 +176,6 @@ func (t *Tracer) receiveEventsFromPerfReader() error {
 		if err != nil {
 			return err
 		}
-		data := t.ds.NewData()
 		sample := rec.RawSample
 		if uint32(len(rec.RawSample)) < t.eventSize {
 			// event is truncated; we need to copy
@@ -186,15 +190,21 @@ func (t *Tracer) receiveEventsFromPerfReader() error {
 			lastSlowLen = len(rec.RawSample)
 			sample = slowBuf
 		}
-		err = t.accessor.Set(data, sample)
-		if err != nil {
-			log.Printf("error setting buffer: %v", err)
-			t.ds.Release(data)
+
+		ev := t.ds.NewGadgetPayloadEvent()
+		if ev == nil {
+			log.Printf("error creating new event")
 			continue
 		}
-		err = t.ds.EmitAndRelease(data)
+		err = t.accessor.Set(ev.GetPayload(), sample)
 		if err != nil {
-			log.Printf("error emitting data: %v", err)
+			log.Printf("error setting event payload: %v", err)
+			t.ds.Release(ev)
+			continue
+		}
+		err = t.ds.EmitAndRelease(ev)
+		if err != nil {
+			log.Printf("error emitting event: %v", err)
 		}
 		if rec.LostSamples > 0 {
 			t.ds.ReportLostData(rec.LostSamples)

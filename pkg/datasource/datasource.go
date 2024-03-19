@@ -18,6 +18,8 @@ import (
 	"encoding/binary"
 	"io"
 
+	"google.golang.org/protobuf/reflect/protoreflect"
+
 	"github.com/inspektor-gadget/inspektor-gadget/pkg/gadget-service/api"
 	"github.com/inspektor-gadget/inspektor-gadget/pkg/parser"
 )
@@ -27,26 +29,37 @@ type Type uint32
 const (
 	TypeUndefined Type = iota
 	TypeEvent
+	TypeArray
 	TypeMetrics
 )
 
-type Data interface {
-	private()
-	SetSeq(uint32)
-	Raw() *api.GadgetData
+type Payload interface {
+	Set(index uint32, data []byte)
+	SetChunk(index uint32, offset uint32, size uint32, data []byte)
+	Get(index uint32) []byte
+	GetChunk(index uint32, offset uint32, size uint32) []byte
+	TotalIndexes() uint32
 }
 
-func (d *data) SetSeq(seq uint32) {
-	d.Seq = seq
+type GadgetPayload interface {
+	Raw() protoreflect.ProtoMessage
+	Each(func(Payload) error) error
 }
 
-func (d *data) Raw() *api.GadgetData {
-	return (*api.GadgetData)(d)
+type GadgetPayloadEvent interface {
+	GadgetPayload
+	GetPayload() Payload
+}
+
+type GadgetPayloadArray interface {
+	GadgetPayload
+	New() Payload
+	Add(Payload)
 }
 
 // DataFunc is the callback that will be called for Data emitted by a DataSource. Data has to be consumed
 // synchronously and may not be accessed after returning - make a copy if you need to hold on to Data.
-type DataFunc func(DataSource, Data) error
+type DataFunc func(DataSource, GadgetPayload) error
 
 // DataSource is an interface that represents a data source of a gadget. Usually, it represents a map in eBPF and some
 // tooling around handling it in Go. An eBPF program can have multiple DataSources, each one representing a different
@@ -64,25 +77,26 @@ type DataSource interface {
 
 	// AddField adds a field as a new payload
 	AddField(fieldName string, options ...FieldOption) (FieldAccessor, error)
-
-	// NewData builds a new data structure that can be written to
-	NewData() Data
 	GetField(fieldName string) FieldAccessor
 	GetFieldsWithTag(tag ...string) []FieldAccessor
+
+	// NewGadgetPayloadEvent builds a new GadgetPayloadEvent
+	NewGadgetPayloadEvent() GadgetPayloadEvent
+	NewGadgetPayloadArray() GadgetPayloadArray
 
 	// EmitAndRelease sends data through the operator chain and releases it afterward;
 	// Data may not be used after calling this. This should only be used in the running phase of the gadget, not
 	// in the initialization phase.
-	EmitAndRelease(Data) error
+	EmitAndRelease(GadgetPayload) error
 
 	// Release releases the memory of Data; Data may not be used after calling this
-	Release(Data)
+	Release(GadgetPayload)
 
 	// ReportLostData reports a number of lost data cases
 	ReportLostData(lostSampleCount uint64)
 
 	// Dump dumps the content of Data to a writer for debugging purposes
-	Dump(Data, io.Writer)
+	Dump(GadgetPayload, io.Writer)
 
 	// Subscribe makes sure that events emitted from this DataSource are passed to DataFunc; subscribers will be
 	// sorted by priority and handed over data in that order (lower numbers = earlier). Subscriptions to

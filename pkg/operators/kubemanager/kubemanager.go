@@ -430,18 +430,20 @@ func (m *KubeManagerInstance) ParamDescs(gadgetCtx operators.GadgetContext) para
 func (m *KubeManagerInstance) Prepare(gadgetCtx operators.GadgetContext, params *params.Params) error {
 	m.params = params
 	for ds, wrapper := range m.eventWrappers {
-		ds.Subscribe(func(ds datasource.DataSource, data datasource.Data) error {
-			wr := &compat.EventWrapper{
-				EventWrapperBase: wrapper,
-				Data:             data,
-			}
-			if wrapper.MntnsidAccessor != nil {
-				m.manager.gadgetTracerManager.ContainerCollection.EnrichEventByMntNs(wr)
-			}
-			if wrapper.NetnsidAccessor != nil {
-				m.manager.gadgetTracerManager.ContainerCollection.EnrichEventByNetNs(wr)
-			}
-			return nil
+		ds.Subscribe(func(ds datasource.DataSource, gp datasource.GadgetPayload) error {
+			return gp.Each(func(p datasource.Payload) error {
+				wr := &compat.EventWrapper{
+					EventWrapperBase: wrapper,
+					Payload:          p,
+				}
+				if wrapper.MntnsidAccessor != nil {
+					m.manager.gadgetTracerManager.ContainerCollection.EnrichEventByMntNs(wr)
+				}
+				if wrapper.NetnsidAccessor != nil {
+					m.manager.gadgetTracerManager.ContainerCollection.EnrichEventByNetNs(wr)
+				}
+				return nil
+			})
 		}, 0)
 	}
 

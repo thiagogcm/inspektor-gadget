@@ -65,8 +65,8 @@ func (r *Runtime) RunOCIGadget(gadgetCtx runtime.GadgetContext, params map[strin
 
 		gadgetCtx.Logger().Debugf("subscribing to %s", ds.Name())
 
-		ds.Subscribe(func(ds datasource.DataSource, data datasource.Data) error {
-			sink(ds, data)
+		ds.Subscribe(func(ds datasource.DataSource, gp datasource.GadgetPayload) error {
+			sink(ds, gp)
 			return nil
 		}, 10000)
 	}

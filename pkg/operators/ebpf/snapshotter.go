@@ -89,11 +89,29 @@ func (i *ebpfInstance) runSnapshotters() error {
 			// TODO: we need a link from iter to map
 			for _, snapshotter := range i.snapshotters {
 				// We'll for now use the first one that matches
-				if uint32(len(buf))%snapshotter.accessor.Size() == 0 {
-					for i := uint32(0); i < uint32(len(buf)); i += snapshotter.accessor.Size() {
-						data := snapshotter.ds.NewData()
-						snapshotter.accessor.Set(data, buf[i:i+snapshotter.accessor.Size()])
-						snapshotter.ds.EmitAndRelease(data)
+				accessorSize := snapshotter.accessor.Size()
+
+				i.logger.Debugf("number of elements: %d (mod %d)",
+					uint32(len(buf))/accessorSize, uint32(len(buf))%accessorSize)
+
+				if uint32(len(buf))%accessorSize == 0 {
+					array := snapshotter.ds.NewGadgetPayloadArray()
+					if array == nil {
+						i.logger.Errorf("creating new array")
+						continue
+					}
+
+					for j := uint32(0); j < uint32(len(buf)); j += accessorSize {
+						p := array.New()
+						err := snapshotter.accessor.Set(p, buf[j:j+accessorSize])
+						if err != nil {
+							i.logger.Errorf("setting array payload: %v", err)
+							continue
+						}
+						array.Add(p)
+					}
+					if err = snapshotter.ds.EmitAndRelease(array); err != nil {
+						i.logger.Errorf("emitting array: %v", err)
 					}
 				}
 			}
@@ -116,11 +134,29 @@ func (i *ebpfInstance) runSnapshotters() error {
 					// TODO: we need a link from iter to map
 					for _, snapshotter := range i.snapshotters {
 						// We'll for now use the first one that matches
-						if uint32(len(buf))%snapshotter.accessor.Size() == 0 {
-							for i := uint32(0); i < uint32(len(buf)); i += snapshotter.accessor.Size() {
-								data := snapshotter.ds.NewData()
-								snapshotter.accessor.Set(data, buf[i:i+snapshotter.accessor.Size()])
-								snapshotter.ds.EmitAndRelease(data)
+						accessorSize := snapshotter.accessor.Size()
+
+						i.logger.Debugf("number of elements: %d (mod %d)",
+							uint32(len(buf))/accessorSize, uint32(len(buf))%accessorSize)
+
+						if uint32(len(buf))%accessorSize == 0 {
+							array := snapshotter.ds.NewGadgetPayloadArray()
+							if array == nil {
+								i.logger.Errorf("creating new array")
+								continue
+							}
+
+							for j := uint32(0); j < uint32(len(buf)); j += accessorSize {
+								p := array.New()
+								err := snapshotter.accessor.Set(p, buf[j:j+accessorSize])
+								if err != nil {
+									i.logger.Errorf("setting array payload: %v", err)
+									continue
+								}
+								array.Add(p)
+							}
+							if err = snapshotter.ds.EmitAndRelease(array); err != nil {
+								i.logger.Errorf("emitting array: %v", err)
 							}
 						}
 					}

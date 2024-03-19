@@ -204,13 +204,29 @@ func (r *Runtime) runOCIGadget(gadgetCtx runtime.GadgetContext, target target, a
 				}
 				expectedSeq = ev.Seq + 1
 				if ds, ok := dsMap[ev.DataSourceID]; ok && ds != nil {
-					d := ds.NewData()
-					err := proto.Unmarshal(ev.Payload, d.Raw())
-					if err != nil {
-						gadgetCtx.Logger().Debugf("error unmarshaling payload: %v", err)
+					// TODO: Validate the number of ds in the payload
+					var err error
+					var gp datasource.GadgetPayload
+					switch ds.Type() {
+					case datasource.TypeEvent:
+						gp = ds.NewGadgetPayloadEvent()
+					case datasource.TypeArray:
+						gp = ds.NewGadgetPayloadArray()
+					}
+					if gp == nil {
+						gadgetCtx.Logger().Warnf("invalid payload type %d for ds %s", ds.Type(), ds.Name())
 						continue
 					}
-					ds.EmitAndRelease(d)
+					err = proto.Unmarshal(ev.Payload, gp.Raw())
+					if err != nil {
+						gadgetCtx.Logger().Errorf("unmarshaling payload: %v", err)
+						continue
+					}
+					err = ds.EmitAndRelease(gp)
+					if err != nil {
+						gadgetCtx.Logger().Errorf("emitting payload: %v", err)
+						continue
+					}
 				}
 			case api.EventTypeGadgetResult:
 				gadgetCtx.Logger().Debugf("%-20s | got result from server", target.node)
@@ -236,7 +252,7 @@ func (r *Runtime) runOCIGadget(gadgetCtx runtime.GadgetContext, target target, a
 				}
 				gadgetCtx.Logger().Debugf("loaded gadget info")
 				for _, ds := range gadgetCtx.GetDataSources() {
-					gadgetCtx.Logger().Debugf("registered ds %s", ds.Name())
+					gadgetCtx.Logger().Debugf("registered ds %s of type %d", ds.Name(), ds.Type())
 					dsMap[dsNameMap[ds.Name()]] = ds
 				}
 				initialized = true

@@ -187,6 +187,7 @@ func (c *GadgetContext) ImageName() string {
 }
 
 func (c *GadgetContext) RegisterDataSource(t datasource.Type, name string) (datasource.DataSource, error) {
+	c.logger.Debugf("Registering DataSource %q with type %v", name, t)
 	ds := datasource.New(t, name)
 	c.dataSources[name] = ds
 	return ds, nil
