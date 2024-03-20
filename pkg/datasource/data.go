@@ -220,31 +220,31 @@ func NewFromAPI(in *api.DataSource) (DataSource, error) {
 }
 
 func (ds *dataSource) registerPool() {
-	switch ds.dType {
-	case TypeEvent:
-		ds.dPool.New = func() any {
-			gp := &gPayloadEvent{
-				Payload: &api.Payload{
-					Data: make([][]byte, ds.payloadCount),
-				},
-			}
-			for i := range gp.Payload.Data {
-				gp.Payload.Data[i] = make([]byte, 0)
-			}
-			return gp
-		}
-	case TypeArray:
-		ds.dPool.New = func() any {
-			// payloadSize will be used to pre-allocate the payload array in
-			// gPayloadArray.New().
-			return &gPayloadArray{
-				GadgetPayloadArray: &api.GadgetPayloadArray{
-					Payloads: make([]*api.Payload, 0),
-				},
-				payloadSize: ds.payloadCount,
-			}
-		}
-	}
+	// switch ds.dType {
+	// case TypeEvent:
+	// 	ds.dPool.New = func() any {
+	// 		gp := &gPayloadEvent{
+	// 			Payload: &api.Payload{
+	// 				Data: make([][]byte, ds.payloadCount),
+	// 			},
+	// 		}
+	// 		for i := range gp.Payload.Data {
+	// 			gp.Payload.Data[i] = make([]byte, 0)
+	// 		}
+	// 		return gp
+	// 	}
+	// case TypeArray:
+	// 	ds.dPool.New = func() any {
+	// 		// payloadSize will be used to pre-allocate the payload array in
+	// 		// gPayloadArray.New().
+	// 		return &gPayloadArray{
+	// 			GadgetPayloadArray: &api.GadgetPayloadArray{
+	// 				Payloads: make([]*api.Payload, 0),
+	// 			},
+	// 			payloadSize: ds.payloadCount,
+	// 		}
+	// 	}
+	// }
 }
 
 func (ds *dataSource) Name() string {
@@ -259,14 +259,36 @@ func (ds *dataSource) NewGadgetPayloadEvent() GadgetPayloadEvent {
 	if ds.dType != TypeEvent {
 		return nil
 	}
-	return ds.dPool.Get().(*gPayloadEvent)
+	// return ds.dPool.Get().(GadgetPayloadEvent) - panic: interface conversion: *api.GadgetPayloadEvent is not datasource.GadgetPayloadEvent: missing method Each
+	// return ds.dPool.Get().(*gPayloadEvent) - panic: interface conversion: interface {} is *api.GadgetPayloadEvent, not *datasource.gPayloadEvent
+	// api := ds.dPool.Get().(*api.GadgetPayloadEvent) return (*gPayloadEvent)(api) panic: interface conversion: interface {} is *datasource.gPayloadEvent, not *api.GadgetPayloadEvent
+	// return ds.dPool.Get().(*gPayloadEvent)
+
+	gp := &gPayloadEvent{
+		Payload: &api.Payload{
+			Data: make([][]byte, ds.payloadCount),
+		},
+	}
+	for i := range gp.Payload.Data {
+		gp.Payload.Data[i] = make([]byte, 0)
+	}
+	return gp
 }
 
 func (ds *dataSource) NewGadgetPayloadArray() GadgetPayloadArray {
 	if ds.dType != TypeArray {
 		return nil
 	}
-	return ds.dPool.Get().(*gPayloadArray)
+	//	return ds.dPool.Get().(GadgetPayloadArray)  - panic: interface conversion: *api.GadgetPayloadArray is not datasource.GadgetPayloadArray: missing method Add
+
+	// payloadSize will be used to pre-allocate the payload array in
+	// gPayloadArray.New().
+	return &gPayloadArray{
+		GadgetPayloadArray: &api.GadgetPayloadArray{
+			Payloads: make([]*api.Payload, 0),
+		},
+		payloadSize: ds.payloadCount,
+	}
 }
 
 func (ds *dataSource) ByteOrder() binary.ByteOrder {
@@ -437,6 +459,7 @@ func (ds *dataSource) Subscribe(fn DataFunc, priority int) {
 }
 
 func (ds *dataSource) EmitAndRelease(gp GadgetPayload) error {
+	// TODO(JOSE): It's not releasing the whole struct for the gPayloadArray
 	defer ds.dPool.Put(gp.Raw())
 	for _, sub := range ds.subscriptions {
 		err := sub.fn(ds, gp)
