@@ -112,9 +112,13 @@ func (a *fieldAccessor) Get(p Payload) []byte {
 		return nil
 	}
 	if a.f.Size > 0 {
+		a.ds.logger.Debugf("getting static field %s (PayloadIndex %d Size %d Offs %d)\n",
+			a.f.Name, a.f.PayloadIndex, a.f.Size, a.f.Offs)
 		// size and offset must be valid here; checks take place on initialization
 		return p.GetChunk(a.f.PayloadIndex, a.f.Offs, a.f.Size)
 	}
+
+	a.ds.logger.Debugf("getting dynamic field %s (PayloadIndex %d)\n", a.f.Name, a.f.PayloadIndex)
 	return p.Get(a.f.PayloadIndex)
 }
 
