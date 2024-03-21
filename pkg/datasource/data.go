@@ -364,6 +364,10 @@ func (ds *dataSource) AddStaticFields(size uint32, fields []Field) (FieldAccesso
 				nf.Flags |= FieldFlagHasParent.Uint32() | FieldFlagHidden.Uint32() // default to hide subfields
 			}
 		}
+
+		ds.logger.Debugf("new static field: name %s type %s PayloadIndex %d size %d offset %d\n",
+			fieldName, nf.Kind, idx, nf.Size, nf.Offs)
+
 		newFields = append(newFields, nf)
 	}
 
@@ -382,6 +386,8 @@ func (ds *dataSource) AddStaticFields(size uint32, fields []Field) (FieldAccesso
 	}
 
 	ds.payloadCount++
+
+	ds.logger.Debugf("new static fields: PayloadIndex %d size %d numFields %d\n", idx, size, len(newFields))
 
 	return &fieldAccessor{ds: ds, f: &field{
 		PayloadIndex: idx,
@@ -415,6 +421,9 @@ func (ds *dataSource) AddField(name string, opts ...FieldOption) (FieldAccessor,
 
 	ds.fields = append(ds.fields, nf)
 	ds.fieldMap[nf.FullName] = nf
+
+	ds.logger.Debugf("new dynamic field: name %s PayloadIndex %d size %d\n", name, nf.PayloadIndex, nf.Size)
+
 	return &fieldAccessor{ds: ds, f: nf}, nil
 }
 

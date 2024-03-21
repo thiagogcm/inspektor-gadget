@@ -176,6 +176,10 @@ func (a *fieldAccessor) AddSubField(name string, opts ...FieldOption) (FieldAcce
 
 	a.ds.fields = append(a.ds.fields, nf)
 	a.ds.fieldMap[nf.FullName] = nf
+
+	a.ds.logger.Debugf("new dynamic sub-field: name %s (parent %s) PayloadIndex %d size %d\n",
+		name, a.ds.fields[nf.Parent].Name, nf.PayloadIndex, nf.Size)
+
 	return &fieldAccessor{ds: a.ds, f: nf}, nil
 }
 
