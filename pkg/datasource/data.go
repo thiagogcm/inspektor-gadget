@@ -29,6 +29,7 @@ import (
 	"google.golang.org/protobuf/reflect/protoreflect"
 
 	"github.com/inspektor-gadget/inspektor-gadget/pkg/gadget-service/api"
+	"github.com/inspektor-gadget/inspektor-gadget/pkg/logger"
 )
 
 type gPayloadEvent api.GadgetPayloadEvent
@@ -183,9 +184,11 @@ type dataSource struct {
 
 	byteOrder binary.ByteOrder
 	lock      sync.RWMutex
+
+	logger logger.Logger
 }
 
-func newDataSource(t Type, name string) *dataSource {
+func newDataSource(t Type, name string, l logger.Logger) *dataSource {
 	return &dataSource{
 		name:            name,
 		dType:           t,
@@ -194,17 +197,18 @@ func newDataSource(t Type, name string) *dataSource {
 		byteOrder:       NativeEndian,
 		tags:            make([]string, 0),
 		annotations:     map[string]string{},
+		logger:          l,
 	}
 }
 
-func New(t Type, name string) DataSource {
-	ds := newDataSource(t, name)
+func New(t Type, name string, l logger.Logger) DataSource {
+	ds := newDataSource(t, name, l)
 	ds.registerPool()
 	return ds
 }
 
-func NewFromAPI(in *api.DataSource) (DataSource, error) {
-	ds := newDataSource(Type(in.Type), in.Name)
+func NewFromAPI(in *api.DataSource, l logger.Logger) (DataSource, error) {
+	ds := newDataSource(Type(in.Type), in.Name, l)
 	for _, f := range in.Fields {
 		ds.fields = append(ds.fields, (*field)(f))
 		ds.fieldMap[f.Name] = (*field)(f)

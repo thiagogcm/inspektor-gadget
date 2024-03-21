@@ -188,7 +188,7 @@ func (c *GadgetContext) ImageName() string {
 
 func (c *GadgetContext) RegisterDataSource(t datasource.Type, name string) (datasource.DataSource, error) {
 	c.logger.Debugf("Registering DataSource %q with type %v", name, t)
-	ds := datasource.New(t, name)
+	ds := datasource.New(t, name, c.logger)
 	c.dataSources[name] = ds
 	return ds, nil
 }
@@ -286,7 +286,7 @@ func (c *GadgetContext) LoadGadgetInfo(info *api.GadgetInfo) error {
 
 	c.dataSources = make(map[string]datasource.DataSource)
 	for _, inds := range info.DataSources {
-		ds, err := datasource.NewFromAPI(inds)
+		ds, err := datasource.NewFromAPI(inds, c.logger)
 		if err != nil {
 			c.lock.Unlock()
 			return fmt.Errorf("creating DataSource from API: %w", err)
