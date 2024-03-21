@@ -80,6 +80,14 @@ func (a *gPayloadArray) Add(p Payload) {
 	a.Payloads = append(a.Payloads, (*api.Payload)(p.(*payload)))
 }
 
+func (a *gPayloadArray) GetPayloadArray() []Payload {
+	res := make([]Payload, 0, len(a.Payloads))
+	for _, p := range a.Payloads {
+		res = append(res, (*payload)(p))
+	}
+	return res
+}
+
 type payload api.Payload
 
 func (p *payload) Set(index uint32, data []byte) {

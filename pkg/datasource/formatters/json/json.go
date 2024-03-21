@@ -217,6 +217,20 @@ func (f *Formatter) Marshal(p datasource.Payload) []byte {
 	return e.Bytes()
 }
 
+func (f *Formatter) MarshalArray(a []datasource.Payload) []byte {
+	e := bufpool.Get().(*encodeState)
+	e.Reset()
+	defer bufpool.Put(e)
+	e.Write([]byte("["))
+	for _, p := range a {
+		for _, fn := range f.fns {
+			fn(e, p)
+		}
+	}
+	e.Write([]byte("]"))
+	return e.Bytes()
+}
+
 type floatEncoder int // number of bits
 
 // from encoding/json/encode.go

@@ -55,6 +55,7 @@ type GadgetPayloadArray interface {
 	GadgetPayload
 	New() Payload
 	Add(Payload)
+	GetPayloadArray() []Payload
 }
 
 // DataFunc is the callback that will be called for Data emitted by a DataSource. Data has to be consumed

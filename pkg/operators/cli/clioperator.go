@@ -142,14 +142,37 @@ func (c *cliOperatorInstance) Prepare(gadgetCtx operators.GadgetContext, params 
 		jsonFormatter := json.New(ds)
 
 		ds.Subscribe(func(ds datasource.DataSource, gp datasource.GadgetPayload) error {
-			return gp.Each(func(p datasource.Payload) error {
-				if false {
-					handler(datasource.NewDataTuple(ds, p))
+			if ds.Type() == datasource.TypeEvent {
+				p, ok := gp.(datasource.GadgetPayloadEvent)
+				if !ok {
+					return fmt.Errorf("invalid payload type for dataSource %q: expected GadgetPayloadEvent, got %T",
+						ds.Name(), gp)
 				}
-				fmt.Print(string(jsonFormatter.Marshal(p)))
-				fmt.Print("\n")
+				if false {
+					handler(datasource.NewDataTuple(ds, p.GetPayload()))
+				} else {
+					fmt.Print(string(jsonFormatter.Marshal(p.GetPayload())))
+				}
+			} else if ds.Type() == datasource.TypeArray {
+				a, ok := gp.(datasource.GadgetPayloadArray)
+				if !ok {
+					return fmt.Errorf("invalid payload type for dataSource %q: expected GadgetPayloadArray, got %T",
+						ds.Name(), gp)
+				}
+				if false {
+					a.Each(func(p datasource.Payload) error {
+						handler(datasource.NewDataTuple(ds, p))
+						return nil
+					})
+				} else {
+					fmt.Print(string(jsonFormatter.MarshalArray(a.GetPayloadArray())))
+				}
+			} else {
+				gadgetCtx.Logger().Debugf("unsupported data source type: %v. Do nothing", ds.Type())
 				return nil
-			})
+			}
+			fmt.Print("\n")
+			return nil
 		}, Priority)
 	}
 
