@@ -153,7 +153,7 @@ func (f *Formatter) addSubFields(accessors []datasource.FieldAccessor, prefix st
 			}
 		case api.Kind_Int64:
 			fn = func(e *encodeState, data datasource.Data) {
-				b := strconv.AppendInt(e.scratch[:0], int64(f.ds.ByteOrder().Uint16(accessor.Get(data))), 10)
+				b := strconv.AppendInt(e.scratch[:0], int64(f.ds.ByteOrder().Uint64(accessor.Get(data))), 10)
 				e.Write(b)
 			}
 		case api.Kind_Uint16:
