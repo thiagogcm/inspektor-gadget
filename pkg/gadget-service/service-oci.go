@@ -140,6 +140,18 @@ func (s *Service) RunOCIGadget(runGadget api.OCIGadgetManager_RunOCIGadgetServer
 		for _, ds := range gadgetCtx.GetDataSources() {
 			dsID := dsLookup[ds.Name()]
 			ds.Subscribe(func(ds datasource.DataSource, gp datasource.GadgetPayload) error {
+				j := 0
+				gadgetCtx.Logger().Debug("gadget-service: GadgetPayload to be sent:\n")
+				gp.Each(func(p datasource.Payload) error {
+					gadgetCtx.Logger().Debug("======================================================\n")
+					for i := uint32(0); i < p.TotalIndexes(); i++ {
+						gadgetCtx.Logger().Debugf("PayloadArray[%d].Payload[%d]: %s\n", j, i, p.Get(i))
+					}
+					gadgetCtx.Logger().Debug("======================================================\n")
+					j++
+					return nil
+				})
+
 				p, _ := proto.Marshal(gp.Raw())
 
 				event := &api.GadgetEvent{

@@ -222,6 +222,19 @@ func (r *Runtime) runOCIGadget(gadgetCtx runtime.GadgetContext, target target, a
 						gadgetCtx.Logger().Errorf("unmarshaling payload: %v", err)
 						continue
 					}
+
+					j := 0
+					gadgetCtx.Logger().Debug("grpc: GadgetPayload received and marshalled:\n")
+					gp.Each(func(p datasource.Payload) error {
+						gadgetCtx.Logger().Debug("======================================================\n")
+						for i := uint32(0); i < p.TotalIndexes(); i++ {
+							gadgetCtx.Logger().Debugf("PayloadArray[%d].Payload[%d]: %s\n", j, i, p.Get(i))
+						}
+						gadgetCtx.Logger().Debug("======================================================\n")
+						j++
+						return nil
+					})
+
 					err = ds.EmitAndRelease(gp)
 					if err != nil {
 						gadgetCtx.Logger().Errorf("emitting payload: %v", err)
