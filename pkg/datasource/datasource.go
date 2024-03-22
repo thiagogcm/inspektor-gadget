@@ -54,7 +54,7 @@ type GadgetPayloadEvent interface {
 type GadgetPayloadArray interface {
 	GadgetPayload
 	New() Payload
-	Add(Payload)
+	Add(...Payload)
 	GetPayloadArray() []Payload
 }
 

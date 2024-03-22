@@ -77,8 +77,10 @@ func (a *gPayloadArray) New() Payload {
 	return (*payload)(p)
 }
 
-func (a *gPayloadArray) Add(p Payload) {
-	a.Payloads = append(a.Payloads, (*api.Payload)(p.(*payload)))
+func (a *gPayloadArray) Add(ps ...Payload) {
+	for _, p := range ps {
+		a.Payloads = append(a.Payloads, (*api.Payload)(p.(*payload)))
+	}
 }
 
 func (a *gPayloadArray) GetPayloadArray() []Payload {
