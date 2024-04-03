@@ -1307,7 +1307,10 @@ jobs:
   build-and-push-gadgets:
     name: Build and push gadgets
     # level: 2
-    needs: [ build-ig, build-helper-images ]
+    needs:
+      - build-ig
+      - build-helper-images
+      - check-secrets
     runs-on: ubuntu-latest
     permissions:
       # allow publishing container image
@@ -1344,6 +1347,20 @@ jobs:
           GADGET_TAG=${{ steps.set-repo-determine-image-tag.outputs.gadget-tag }} \
           BUILDER_IMAGE=${{ needs.build-helper-images.outputs.ebpf_builder_image }} \
           push-gadgets -o install/ig
+      - name: Install Cosign
+        if: needs.check-secrets.outputs.cosign == 'true' && ${{ github.event_name }} == 'push'
+        uses: sigstore/cosign-installer@main
+      - name: Sign the manifest list
+        if: needs.check-secrets.outputs.cosign == 'true' && ${{ github.event_name }} == 'push'
+        env:
+          COSIGN_PASSWORD: '${{ secrets.COSIGN_PASSWORD }}'
+          COSIGN_PRIVATE_KEY: '${{ secrets.COSIGN_PRIVATE_KEY }}'
+        run: |
+          for i in $(make -C gadgets --no-print-directory list_gadgets); do
+            gadget="${{ steps.set-repo-determine-image-tag.outputs.gadget-repository }}/${i}:${{ steps.set-repo-determine-image-tag.outputs.gadget-tag }}"
+
+            cosign sign --key env://COSIGN_PRIVATE_KEY --yes --recursive $gadget
+          done
 
   test-integration-non-k8s-ig:
     name: Test ig w/o k8s
