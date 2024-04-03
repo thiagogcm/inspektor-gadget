@@ -16,7 +16,7 @@ Verifying the container image is pretty straightforward:
 
 ```bash
 $ RELEASE='v0.23.0'
-$ URL="https://github.com/inspektor-gadget/inspektor-gadget/blob/main/inspektor-gadget.pub"
+$ URL="https://github.com/inspektor-gadget/inspektor-gadget/blob/main/pkg/resources/inspektor-gadget.pub"
 # We first need to get the public key.
 $ wget $URL
 $ cosign verify --key inspektor-gadget.pub ghcr.io/inspektor-gadget/inspektor-gadget:${RELEASE}
