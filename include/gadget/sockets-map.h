@@ -71,13 +71,20 @@ struct sockets_key {
 };
 
 #define TASK_COMM_LEN 16
+#ifndef PATH_MAX
+#define PATH_MAX 4096
+#endif
 struct sockets_value {
 	__u64 mntns;
 	__u64 pid_tgid;
 	__u64 uid_gid;
 	char task[TASK_COMM_LEN];
+	char pcomm[TASK_COMM_LEN];
 	__u64 sock;
 	__u64 deletion_timestamp;
+	__u8 cwd[PATH_MAX];
+	__u8 exepath[PATH_MAX];
+	__u32 ppid;
 	char ipv6only;
 };
 
