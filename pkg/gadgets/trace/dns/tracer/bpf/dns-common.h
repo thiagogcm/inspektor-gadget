@@ -11,9 +11,11 @@ struct event_t {
 	__u64 mount_ns_id;
 	__u32 pid;
 	__u32 tid;
+	__u32 ppid;
 	__u32 uid;
 	__u32 gid;
 	__u8 task[TASK_COMM_LEN];
+	__u8 pcomm[TASK_COMM_LEN];
 
 	union {
 		__u8 saddr_v6[16];

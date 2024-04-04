@@ -19,9 +19,11 @@ type dnsEventT struct {
 	MountNsId uint64
 	Pid       uint32
 	Tid       uint32
+	Ppid      uint32
 	Uid       uint32
 	Gid       uint32
 	Task      [16]uint8
+	Pcomm     [16]uint8
 	SaddrV6   [16]uint8
 	DaddrV6   [16]uint8
 	Af        uint16
@@ -30,7 +32,7 @@ type dnsEventT struct {
 	DnsOff    uint16
 	Proto     uint8
 	PktType   uint8
-	_         [6]byte
+	_         [2]byte
 	LatencyNs uint64
 }
 

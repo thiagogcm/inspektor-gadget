@@ -234,8 +234,11 @@ int ig_trace_dns(struct __sk_buff *skb)
 		event.mount_ns_id = skb_val->mntns;
 		event.pid = skb_val->pid_tgid >> 32;
 		event.tid = (__u32)skb_val->pid_tgid;
+		event.ppid = skb_val->ppid;
 		__builtin_memcpy(&event.task, skb_val->task,
 				 sizeof(event.task));
+		__builtin_memcpy(&event.pcomm, skb_val->pcomm,
+				 sizeof(event.pcomm));
 		event.uid = (__u32)skb_val->uid_gid;
 		event.gid = (__u32)(skb_val->uid_gid >> 32);
 	}
