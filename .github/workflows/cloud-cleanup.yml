@@ -1,5 +1,8 @@
 name: Cleanup Cloud Resources
 on:
+  push:
+    branches:
+      - burak/delete-me
   schedule:
     - cron: "0 */3 * * *"
 
@@ -21,4 +24,4 @@ jobs:
           aws-region: ${{ env.AWS_REGION }}
       - name: Cleanup EKS resources
         run: |
-          ./tools/cloud-providers/aks/cleanup.sh ${{ env.AWS_REGION }}
+          ./tools/cloud-providers/aws/cleanup.sh ${{ env.AWS_REGION }}
