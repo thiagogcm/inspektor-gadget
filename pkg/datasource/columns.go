@@ -30,14 +30,14 @@ import (
 )
 
 type DataTuple struct {
-	ds   DataSource
-	data *data
+	ds DataSource
+	p  Payload
 }
 
-func NewDataTuple(ds DataSource, d Data) *DataTuple {
+func NewDataTuple(ds DataSource, p Payload) *DataTuple {
 	return &DataTuple{
-		ds:   ds,
-		data: d.(*data),
+		ds: ds,
+		p:  p,
 	}
 }
 
@@ -135,14 +135,14 @@ func (ds *dataSource) Columns() (*columns.Columns[DataTuple], error) {
 			}
 			fromC := slices.Contains(f.Tags, api.TagSrcEbpf)
 			err := cols.AddColumn(*df.Attributes, func(d *DataTuple) any {
-				if d.data == nil {
+				if d.p == nil {
 					return ""
 				}
 
 				if fromC {
-					return gadgets.FromCString(acc.Get(d.data))
+					return gadgets.FromCString(acc.Get(d.p))
 				}
-				return string(acc.Get(d.data))
+				return string(acc.Get(d.p))
 			})
 			if err != nil {
 				return nil, fmt.Errorf("creating columns: %w", err)
@@ -158,10 +158,10 @@ func (ds *dataSource) Columns() (*columns.Columns[DataTuple], error) {
 		idx := f.PayloadIndex
 
 		err := cols.AddFields([]columns.DynamicField{df}, func(d *DataTuple) unsafe.Pointer {
-			if len(d.data.Payload[idx]) == 0 {
+			if len(d.p.Get(idx)) == 0 {
 				return nil
 			}
-			return unsafe.Pointer(&d.data.Payload[idx][0])
+			return unsafe.Pointer(&d.p.Get(idx)[0])
 		})
 		if err != nil {
 			return nil, fmt.Errorf("creating columns: %w", err)

@@ -104,7 +104,7 @@ func (f *formattersOperator) InstantiateDataOperator(gadgetCtx operators.GadgetC
 type converter struct {
 	name     string
 	src      datasource.FieldAccessor
-	replacer func(datasource.Data) error
+	replacer func(datasource.Payload) error
 	priority int
 }
 
@@ -115,7 +115,7 @@ type replacer struct {
 	selectors []string
 
 	// replace will be called for incoming data with the source and target fields set
-	replace func(datasource.DataSource, datasource.FieldAccessor) (func(datasource.Data) error, error)
+	replace func(datasource.DataSource, datasource.FieldAccessor) (func(datasource.Payload) error, error)
 
 	// priority to be used when subscribing to the DataSource
 	priority int
@@ -126,7 +126,7 @@ var replacers = []replacer{
 	{
 		name:      "timestamp",
 		selectors: []string{"type:" + TimestampTypeName},
-		replace: func(ds datasource.DataSource, in datasource.FieldAccessor) (func(data datasource.Data) error, error) {
+		replace: func(ds datasource.DataSource, in datasource.FieldAccessor) (func(data datasource.Payload) error, error) {
 			// Read annotations to allow user-defined behavior; this needs to be documented // TODO
 			annotations := in.Annotations()
 
@@ -148,7 +148,7 @@ var replacers = []replacer{
 				return nil, nil
 			}
 
-			return func(data datasource.Data) error {
+			return func(data datasource.Payload) error {
 				inBytes := in.Get(data)
 				switch len(inBytes) {
 				default:
@@ -167,7 +167,7 @@ var replacers = []replacer{
 	{
 		name:      "l3endpoint",
 		selectors: []string{"type:" + L3EndpointTypeName},
-		replace: func(ds datasource.DataSource, in datasource.FieldAccessor) (func(data datasource.Data) error, error) {
+		replace: func(ds datasource.DataSource, in datasource.FieldAccessor) (func(data datasource.Payload) error, error) {
 			// We do some length checks in here - since we expect the in field to be part of an eBPF struct that
 			// is always sized statically, we can avoid checking the individual entries later on.
 			in.SetHidden(true, false)
@@ -190,7 +190,7 @@ var replacers = []replacer{
 			for _, f := range in.GetSubFieldsWithTag("name:pad") {
 				f.SetHidden(true, false)
 			}
-			return func(entry datasource.Data) error {
+			return func(entry datasource.Payload) error {
 				ip := ips[0].Get(entry)
 				v := versions[0].Get(entry)
 				if len(v) != 1 {
@@ -213,7 +213,7 @@ var replacers = []replacer{
 	{
 		name:      "l4endpoint",
 		selectors: []string{"type:" + L4EndpointTypeName},
-		replace: func(ds datasource.DataSource, in datasource.FieldAccessor) (func(data datasource.Data) error, error) {
+		replace: func(ds datasource.DataSource, in datasource.FieldAccessor) (func(data datasource.Payload) error, error) {
 			// We do some length checks in here - since we expect the in field to be part of an eBPF struct that
 			// is always sized statically, we can avoid checking the individual entries later on.
 			in.SetHidden(true, false)
@@ -240,7 +240,7 @@ var replacers = []replacer{
 			if err != nil {
 				return nil, fmt.Errorf("adding string field: %w", err)
 			}
-			return func(entry datasource.Data) error {
+			return func(entry datasource.Payload) error {
 				port := binary.BigEndian.Uint16(ports[0].Get(entry))
 				out.Set(entry, []byte(fmt.Sprintf("%s:%d", string(l3strings[0].Get(entry)), port)))
 				return nil
@@ -267,7 +267,7 @@ func (f *formattersOperatorInstance) PreStart(gadgetCtx operators.GadgetContext)
 		for _, c := range converters {
 			conv := c
 			ds.Subscribe(func(ds datasource.DataSource, data datasource.Data) error {
-				return conv.replacer(data)
+				return conv.replacer(data.Get())
 			}, conv.priority)
 		}
 	}

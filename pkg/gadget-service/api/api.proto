@@ -110,10 +110,15 @@ message InfoResponse {
   bool experimental = 3;
 }
 
+message Payload {
+  repeated bytes data = 1;
+}
+
+// GadgetData is send as payload in GadgetEvent message.
 message GadgetData {
   string node = 1;
   uint32 seq = 2;
-  repeated bytes payload = 3;
+  Payload payload = 3;
 }
 
 message Param {

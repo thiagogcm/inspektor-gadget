@@ -33,12 +33,12 @@ type FieldAccessor interface {
 	Size() uint32
 
 	// Get returns the underlying memory of the field
-	Get(data Data) []byte
+	Get(p Payload) []byte
 
 	// Set sets value as the new reference for the field; if the FieldAccessor is used for the member of a
 	// statically sized payload (for example a member of an eBPF struct), value will be copied to the existing
 	// memory instead.
-	Set(data Data, value []byte) error
+	Set(p Payload, value []byte) error
 
 	// IsRequested returns whether the consumer is interested in this field; if not, operators are not required
 	// to fill them out
@@ -73,29 +73,29 @@ type FieldAccessor interface {
 	// tbd: name
 	RemoveReference(recurse bool)
 
-	Uint8(Data) uint8
-	Uint16(Data) uint16
-	Uint32(Data) uint32
-	Uint64(Data) uint64
-	Int8(Data) int8
-	Int16(Data) int16
-	Int32(Data) int32
-	Int64(Data) int64
+	Uint8(Payload) uint8
+	Uint16(Payload) uint16
+	Uint32(Payload) uint32
+	Uint64(Payload) uint64
+	Int8(Payload) int8
+	Int16(Payload) int16
+	Int32(Payload) int32
+	Int64(Payload) int64
 
-	Float32(Data) float32
-	Float64(Data) float64
+	Float32(Payload) float32
+	Float64(Payload) float64
 
-	PutUint8(Data, uint8)
-	PutUint16(Data, uint16)
-	PutUint32(Data, uint32)
-	PutUint64(Data, uint64)
-	PutInt8(Data, int8)
-	PutInt16(Data, int16)
-	PutInt32(Data, int32)
-	PutInt64(Data, int64)
+	PutUint8(Payload, uint8)
+	PutUint16(Payload, uint16)
+	PutUint32(Payload, uint32)
+	PutUint64(Payload, uint64)
+	PutInt8(Payload, int8)
+	PutInt16(Payload, int16)
+	PutInt32(Payload, int32)
+	PutInt64(Payload, int64)
 
-	String(Data) string
-	CString(Data) string
+	String(Payload) string
+	CString(Payload) string
 }
 
 type fieldAccessor struct {
@@ -115,15 +115,15 @@ func (a *fieldAccessor) Type() api.Kind {
 	return a.f.Kind
 }
 
-func (a *fieldAccessor) Get(d Data) []byte {
+func (a *fieldAccessor) Get(p Payload) []byte {
 	if FieldFlagEmpty.In(a.f.Flags) {
 		return nil
 	}
 	if a.f.Size > 0 {
 		// size and offset must be valid here; checks take place on initialization
-		return d.(*data).Payload[a.f.PayloadIndex][a.f.Offs : a.f.Offs+a.f.Size]
+		return p.GetChunk(a.f.PayloadIndex, a.f.Offs, a.f.Size)
 	}
-	return d.(*data).Payload[a.f.PayloadIndex]
+	return p.Get(a.f.PayloadIndex)
 }
 
 func (a *fieldAccessor) setHidden(hidden bool, recurse bool) {
@@ -145,7 +145,7 @@ func (a *fieldAccessor) SetHidden(hidden bool, recurse bool) {
 	a.setHidden(hidden, recurse)
 }
 
-func (a *fieldAccessor) Set(d Data, b []byte) error {
+func (a *fieldAccessor) Set(p Payload, b []byte) error {
 	if FieldFlagEmpty.In(a.f.Flags) {
 		return errors.New("field cannot contain a value")
 	}
@@ -153,8 +153,7 @@ func (a *fieldAccessor) Set(d Data, b []byte) error {
 		if uint32(len(b)) != a.f.Size {
 			return fmt.Errorf("invalid size, static member expected %d, got %d", a.f.Size, len(b))
 		}
-		// When accessing a member of a statically sized field, copy memory
-		copy(d.Raw().Payload[a.f.PayloadIndex][a.f.Offs:a.f.Offs+a.f.Size], b)
+		p.SetChunk(a.f.PayloadIndex, a.f.Offs, a.f.Size, b)
 		return nil
 	}
 	if FieldFlagContainer.In(a.f.Flags) {
@@ -162,7 +161,7 @@ func (a *fieldAccessor) Set(d Data, b []byte) error {
 			return fmt.Errorf("invalid size, container expected %d, got %d", a.f.Size, len(b))
 		}
 	}
-	d.(*data).Payload[a.f.PayloadIndex] = b
+	p.Set(a.f.PayloadIndex, b)
 	return nil
 }
 
@@ -294,114 +293,114 @@ func (a *fieldAccessor) Annotations() map[string]string {
 	return maps.Clone(a.f.Annotations)
 }
 
-func (a *fieldAccessor) Uint8(data Data) uint8 {
-	val := a.Get(data)
+func (a *fieldAccessor) Uint8(p Payload) uint8 {
+	val := a.Get(p)
 	if len(val) < 1 {
 		return 0
 	}
 	return val[0]
 }
 
-func (a *fieldAccessor) Uint16(data Data) uint16 {
-	val := a.Get(data)
+func (a *fieldAccessor) Uint16(p Payload) uint16 {
+	val := a.Get(p)
 	if len(val) < 2 {
 		return 0
 	}
 	return a.ds.byteOrder.Uint16(val)
 }
 
-func (a *fieldAccessor) Uint32(data Data) uint32 {
-	val := a.Get(data)
+func (a *fieldAccessor) Uint32(p Payload) uint32 {
+	val := a.Get(p)
 	if len(val) < 4 {
 		return 0
 	}
 	return a.ds.byteOrder.Uint32(val)
 }
 
-func (a *fieldAccessor) Uint64(data Data) uint64 {
-	val := a.Get(data)
+func (a *fieldAccessor) Uint64(p Payload) uint64 {
+	val := a.Get(p)
 	if len(val) < 8 {
 		return 0
 	}
 	return a.ds.byteOrder.Uint64(val)
 }
 
-func (a *fieldAccessor) Int8(data Data) int8 {
-	val := a.Get(data)
+func (a *fieldAccessor) Int8(p Payload) int8 {
+	val := a.Get(p)
 	if len(val) < 1 {
 		return 0
 	}
 	return int8(val[0])
 }
 
-func (a *fieldAccessor) Int16(data Data) int16 {
-	val := a.Get(data)
+func (a *fieldAccessor) Int16(p Payload) int16 {
+	val := a.Get(p)
 	if len(val) < 2 {
 		return 0
 	}
 	return int16(a.ds.byteOrder.Uint16(val))
 }
 
-func (a *fieldAccessor) Int32(data Data) int32 {
-	val := a.Get(data)
+func (a *fieldAccessor) Int32(p Payload) int32 {
+	val := a.Get(p)
 	if len(val) < 4 {
 		return 0
 	}
 	return int32(a.ds.byteOrder.Uint32(val))
 }
 
-func (a *fieldAccessor) Int64(data Data) int64 {
-	val := a.Get(data)
+func (a *fieldAccessor) Int64(p Payload) int64 {
+	val := a.Get(p)
 	if len(val) < 8 {
 		return 0
 	}
 	return int64(a.ds.byteOrder.Uint64(val))
 }
 
-func (a *fieldAccessor) Float32(data Data) float32 {
-	return math.Float32frombits(a.Uint32(data))
+func (a *fieldAccessor) Float32(p Payload) float32 {
+	return math.Float32frombits(a.Uint32(p))
 }
 
-func (a *fieldAccessor) Float64(data Data) float64 {
-	return math.Float64frombits(a.Uint64(data))
+func (a *fieldAccessor) Float64(p Payload) float64 {
+	return math.Float64frombits(a.Uint64(p))
 }
 
-func (a *fieldAccessor) String(data Data) string {
-	return string(a.Get(data))
+func (a *fieldAccessor) String(p Payload) string {
+	return string(a.Get(p))
 }
 
-func (a *fieldAccessor) CString(data Data) string {
-	return gadgets.FromCString(a.Get(data))
+func (a *fieldAccessor) CString(p Payload) string {
+	return gadgets.FromCString(a.Get(p))
 }
 
-func (a *fieldAccessor) PutUint8(data Data, val uint8) {
-	a.Get(data)[0] = val
+func (a *fieldAccessor) PutUint8(p Payload, val uint8) {
+	a.Get(p)[0] = val
 }
 
-func (a *fieldAccessor) PutUint16(data Data, val uint16) {
-	a.ds.byteOrder.PutUint16(a.Get(data), val)
+func (a *fieldAccessor) PutUint16(p Payload, val uint16) {
+	a.ds.byteOrder.PutUint16(a.Get(p), val)
 }
 
-func (a *fieldAccessor) PutUint32(data Data, val uint32) {
-	a.ds.byteOrder.PutUint32(a.Get(data), val)
+func (a *fieldAccessor) PutUint32(p Payload, val uint32) {
+	a.ds.byteOrder.PutUint32(a.Get(p), val)
 }
 
-func (a *fieldAccessor) PutUint64(data Data, val uint64) {
-	a.ds.byteOrder.PutUint64(a.Get(data), val)
+func (a *fieldAccessor) PutUint64(p Payload, val uint64) {
+	a.ds.byteOrder.PutUint64(a.Get(p), val)
 }
 
-func (a *fieldAccessor) PutInt8(data Data, val int8) {
-	a.Get(data)[0] = uint8(val)
+func (a *fieldAccessor) PutInt8(p Payload, val int8) {
+	a.Get(p)[0] = uint8(val)
 }
 
-func (a *fieldAccessor) PutInt16(data Data, val int16) {
-	a.ds.byteOrder.PutUint16(a.Get(data), uint16(val))
+func (a *fieldAccessor) PutInt16(p Payload, val int16) {
+	a.ds.byteOrder.PutUint16(a.Get(p), uint16(val))
 }
 
-func (a *fieldAccessor) PutInt32(data Data, val int32) {
-	a.ds.byteOrder.PutUint32(a.Get(data), uint32(val))
+func (a *fieldAccessor) PutInt32(p Payload, val int32) {
+	a.ds.byteOrder.PutUint32(a.Get(p), uint32(val))
 }
 
-func (a *fieldAccessor) PutInt64(data Data, val int64) {
-	a.ds.byteOrder.PutUint64(a.Get(data), uint64(val))
+func (a *fieldAccessor) PutInt64(p Payload, val int64) {
+	a.ds.byteOrder.PutUint64(a.Get(p), uint64(val))
 }

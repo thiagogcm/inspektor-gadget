@@ -26,15 +26,66 @@ import (
 	"strings"
 	"sync"
 
+	"google.golang.org/protobuf/reflect/protoreflect"
+
 	"github.com/inspektor-gadget/inspektor-gadget/pkg/gadget-service/api"
 )
 
-type (
-	data  api.GadgetData
-	field api.Field
-)
+type gData api.GadgetData
 
-func (*data) private() {}
+func (gp *gData) Raw() protoreflect.ProtoMessage {
+	return (*api.GadgetData)(gp)
+}
+
+func (gp *gData) SetSeq(seq uint32) {
+	gp.Seq = seq
+}
+
+func (gp *gData) SetNode(node string) {
+	gp.Node = node
+}
+
+func (gp *gData) Get() Payload {
+	return (*payload)(gp.Payload)
+}
+
+type payload api.Payload
+
+func (p *payload) Set(index uint32, data []byte) {
+	if index >= uint32(len(p.Data)) {
+		return
+	}
+	p.Data[index] = data
+}
+
+func (p *payload) SetChunk(index uint32, offset uint32, size uint32, data []byte) {
+	if index >= uint32(len(p.Data)) {
+		return
+	}
+	if offset+size > uint32(len(p.Data[index])) {
+		return
+	}
+	copy(p.Data[index][offset:offset+size], data)
+}
+
+func (p *payload) Get(index uint32) []byte {
+	if index >= uint32(len(p.Data)) {
+		return nil
+	}
+	return p.Data[index]
+}
+
+func (p *payload) GetChunk(index uint32, offset uint32, size uint32) []byte {
+	if index >= uint32(len(p.Data)) {
+		return nil
+	}
+	if offset+size > uint32(len(p.Data[index])) {
+		return nil
+	}
+	return p.Data[index][offset : offset+size]
+}
+
+type field api.Field
 
 func (f *field) ReflectType() reflect.Type {
 	switch f.Kind {
@@ -132,11 +183,13 @@ func (ds *dataSource) Type() Type {
 }
 
 func (ds *dataSource) NewData() Data {
-	d := &data{
-		Payload: make([][]byte, ds.payloadCount),
+	d := &gData{
+		Payload: &api.Payload{
+			Data: make([][]byte, ds.payloadCount),
+		},
 	}
-	for i := range d.Payload {
-		d.Payload[i] = make([]byte, 0)
+	for i := range d.Payload.Data {
+		d.Payload.Data[i] = make([]byte, 0)
 	}
 	return d
 }
@@ -349,21 +402,21 @@ func (ds *dataSource) IsRequestedField(fieldName string) bool {
 	return ds.requestedFields[fieldName]
 }
 
-func (ds *dataSource) Dump(xd Data, wr io.Writer) {
+func (ds *dataSource) Dump(data Data, wr io.Writer) {
 	ds.lock.RLock()
 	defer ds.lock.RUnlock()
 
-	d := xd.(*data)
+	p := data.Get()
 	for _, f := range ds.fields {
-		if f.Offs+f.Size > uint32(len(d.Payload[f.PayloadIndex])) {
+		if f.Offs+f.Size > uint32(len(p.Get(f.PayloadIndex))) {
 			fmt.Fprintf(wr, "%s (%d): ! invalid size\n", f.Name, f.Size)
 			continue
 		}
 		fmt.Fprintf(wr, "%s (%d) [%s]: ", f.Name, f.Size, strings.Join(f.Tags, " "))
 		if f.Offs > 0 || f.Size > 0 {
-			fmt.Fprintf(wr, "%v\n", d.Payload[f.PayloadIndex][f.Offs:f.Offs+f.Size])
+			fmt.Fprintf(wr, "%v\n", p.GetChunk(f.PayloadIndex, f.Offs, f.Size))
 		} else {
-			fmt.Fprintf(wr, "%v\n", d.Payload[f.PayloadIndex])
+			fmt.Fprintf(wr, "%v\n", p.Get(f.PayloadIndex))
 		}
 	}
 }

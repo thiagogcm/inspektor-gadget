@@ -37,7 +37,7 @@ var (
 
 type Formatter struct {
 	ds                datasource.DataSource
-	fns               []func(e *encodeState, data datasource.Data)
+	fns               []func(e *encodeState, p datasource.Payload)
 	fields            []string
 	showFields        map[string]struct{}
 	hideFields        map[string]struct{}
@@ -100,18 +100,18 @@ func (f *Formatter) init() error {
 		closer = append([]byte("\n"), closer...)
 	}
 
-	f.fns = append(f.fns, func(e *encodeState, data datasource.Data) {
+	f.fns = append(f.fns, func(e *encodeState, p datasource.Payload) {
 		e.Write(f.opener)
 	})
 	subFieldFuncs, _ := f.addSubFields(nil, "", f.indent)
 	f.fns = append(f.fns, subFieldFuncs...)
-	f.fns = append(f.fns, func(e *encodeState, data datasource.Data) {
+	f.fns = append(f.fns, func(e *encodeState, p datasource.Payload) {
 		e.Write(closer)
 	})
 	return nil
 }
 
-func (f *Formatter) addSubFields(accessors []datasource.FieldAccessor, prefix string, indent string) (fns []func(*encodeState, datasource.Data), fieldCounter int) {
+func (f *Formatter) addSubFields(accessors []datasource.FieldAccessor, prefix string, indent string) (fns []func(*encodeState, datasource.Payload), fieldCounter int) {
 	if accessors == nil {
 		accessors = f.ds.Accessors(true)
 	}
@@ -133,7 +133,7 @@ func (f *Formatter) addSubFields(accessors []datasource.FieldAccessor, prefix st
 
 		fullFieldName := prefix + accessor.Name()
 
-		var subFieldFuncs []func(state *encodeState, data datasource.Data)
+		var subFieldFuncs []func(state *encodeState, p datasource.Payload)
 		var subFieldCount int
 		subFields := accessor.SubFields()
 		if len(subFields) > 0 {
@@ -170,7 +170,7 @@ func (f *Formatter) addSubFields(accessors []datasource.FieldAccessor, prefix st
 			fieldName = append(append([]byte(indent), fieldName...), ' ')
 		}
 		if ctr > 0 {
-			fns = append(fns, func(e *encodeState, data datasource.Data) {
+			fns = append(fns, func(e *encodeState, p datasource.Payload) {
 				e.Write(f.fieldSep)
 			})
 		}
@@ -182,76 +182,76 @@ func (f *Formatter) addSubFields(accessors []datasource.FieldAccessor, prefix st
 
 		// Field has subfields
 		if len(subFields) > 0 {
-			fns = append(fns, func(e *encodeState, data datasource.Data) {
+			fns = append(fns, func(e *encodeState, p datasource.Payload) {
 				e.Write(fieldName)
 				e.Write(f.opener)
 			})
 			fns = append(fns, subFieldFuncs...)
-			fns = append(fns, func(e *encodeState, data datasource.Data) {
+			fns = append(fns, func(e *encodeState, p datasource.Payload) {
 				e.Write(closer)
 			})
 			continue
 		}
 
-		var fn func(e *encodeState, data datasource.Data)
+		var fn func(e *encodeState, p datasource.Payload)
 		// Field doesn't have subfields
 		switch accessor.Type() {
 		case api.Kind_Int8:
-			fn = func(e *encodeState, data datasource.Data) {
-				b := strconv.AppendInt(e.scratch[:0], int64(accessor.Int8(data)), 10)
+			fn = func(e *encodeState, p datasource.Payload) {
+				b := strconv.AppendInt(e.scratch[:0], int64(accessor.Int8(p)), 10)
 				e.Write(b)
 			}
 		case api.Kind_Int16:
-			fn = func(e *encodeState, data datasource.Data) {
-				b := strconv.AppendInt(e.scratch[:0], int64(accessor.Int16(data)), 10)
+			fn = func(e *encodeState, p datasource.Payload) {
+				b := strconv.AppendInt(e.scratch[:0], int64(accessor.Int16(p)), 10)
 				e.Write(b)
 			}
 		case api.Kind_Int32:
-			fn = func(e *encodeState, data datasource.Data) {
-				b := strconv.AppendInt(e.scratch[:0], int64(accessor.Int32(data)), 10)
+			fn = func(e *encodeState, p datasource.Payload) {
+				b := strconv.AppendInt(e.scratch[:0], int64(accessor.Int32(p)), 10)
 				e.Write(b)
 			}
 		case api.Kind_Int64:
-			fn = func(e *encodeState, data datasource.Data) {
-				b := strconv.AppendInt(e.scratch[:0], accessor.Int64(data), 10)
+			fn = func(e *encodeState, p datasource.Payload) {
+				b := strconv.AppendInt(e.scratch[:0], accessor.Int64(p), 10)
 				e.Write(b)
 			}
 		case api.Kind_Uint8:
-			fn = func(e *encodeState, data datasource.Data) {
-				b := strconv.AppendUint(e.scratch[:0], uint64(accessor.Uint8(data)), 10)
+			fn = func(e *encodeState, p datasource.Payload) {
+				b := strconv.AppendUint(e.scratch[:0], uint64(accessor.Uint8(p)), 10)
 				e.Write(b)
 			}
 		case api.Kind_Uint16:
-			fn = func(e *encodeState, data datasource.Data) {
-				b := strconv.AppendUint(e.scratch[:0], uint64(accessor.Uint16(data)), 10)
+			fn = func(e *encodeState, p datasource.Payload) {
+				b := strconv.AppendUint(e.scratch[:0], uint64(accessor.Uint16(p)), 10)
 				e.Write(b)
 			}
 		case api.Kind_Uint32:
-			fn = func(e *encodeState, data datasource.Data) {
-				b := strconv.AppendUint(e.scratch[:0], uint64(accessor.Uint32(data)), 10)
+			fn = func(e *encodeState, p datasource.Payload) {
+				b := strconv.AppendUint(e.scratch[:0], uint64(accessor.Uint32(p)), 10)
 				e.Write(b)
 			}
 		case api.Kind_Uint64:
-			fn = func(e *encodeState, data datasource.Data) {
-				b := strconv.AppendUint(e.scratch[:0], accessor.Uint64(data), 10)
+			fn = func(e *encodeState, p datasource.Payload) {
+				b := strconv.AppendUint(e.scratch[:0], accessor.Uint64(p), 10)
 				e.Write(b)
 			}
 		case api.Kind_Float32:
-			fn = func(e *encodeState, data datasource.Data) {
-				floatEncoder(32).writeFloat(e, float64(accessor.Float32(data)))
+			fn = func(e *encodeState, p datasource.Payload) {
+				floatEncoder(32).writeFloat(e, float64(accessor.Float32(p)))
 			}
 		case api.Kind_Float64:
-			fn = func(e *encodeState, data datasource.Data) {
-				floatEncoder(64).writeFloat(e, accessor.Float64(data))
+			fn = func(e *encodeState, p datasource.Payload) {
+				floatEncoder(64).writeFloat(e, accessor.Float64(p))
 			}
 		case api.Kind_String:
-			fn = func(e *encodeState, data datasource.Data) {
-				writeString(e, string(accessor.Get(data)))
+			fn = func(e *encodeState, p datasource.Payload) {
+				writeString(e, string(accessor.Get(p)))
 			}
 		case api.Kind_Bool:
-			fn = func(e *encodeState, data datasource.Data) {
+			fn = func(e *encodeState, p datasource.Payload) {
 				// handle arbitrary length bools
-				for b := range accessor.Get(data) {
+				for b := range accessor.Get(p) {
 					if b != 0 {
 						e.WriteString("true")
 						return
@@ -260,24 +260,24 @@ func (f *Formatter) addSubFields(accessors []datasource.FieldAccessor, prefix st
 				e.WriteString("false")
 			}
 		default:
-			fn = func(e *encodeState, data datasource.Data) {
-				writeString(e, accessor.CString(data))
+			fn = func(e *encodeState, p datasource.Payload) {
+				writeString(e, accessor.CString(p))
 			}
 		}
-		fns = append(fns, func(e *encodeState, data datasource.Data) {
+		fns = append(fns, func(e *encodeState, p datasource.Payload) {
 			e.Write(fieldName)
-			fn(e, data)
+			fn(e, p)
 		})
 	}
 	return
 }
 
-func (f *Formatter) Marshal(data datasource.Data) []byte {
+func (f *Formatter) Marshal(p datasource.Payload) []byte {
 	e := bufpool.Get().(*encodeState)
 	e.Reset()
 	defer bufpool.Put(e)
 	for _, fn := range f.fns {
-		fn(e, data)
+		fn(e, p)
 	}
 	return e.Bytes()
 }

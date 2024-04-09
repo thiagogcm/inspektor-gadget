@@ -101,7 +101,7 @@ func Subscribe(
 			EventWrapperBase: wrapper,
 		}
 		ds.Subscribe(func(ds datasource.DataSource, data datasource.Data) error {
-			wr.Data = data
+			wr.Payload = data.Get()
 			if wrapper.MntnsidAccessor != nil {
 				mntNsEnrichFunc(&wr)
 			}
@@ -229,63 +229,63 @@ func WrapAccessors(source datasource.DataSource, mntnsidAccessor datasource.Fiel
 
 type EventWrapper struct {
 	*EventWrapperBase
-	Data datasource.Data
+	Payload datasource.Payload
 }
 
-func getUint64(accessor datasource.FieldAccessor, data datasource.Data) uint64 {
-	d := accessor.Get(data)
+func getUint64(accessor datasource.FieldAccessor, p datasource.Payload) uint64 {
+	d := accessor.Get(p)
 	switch len(d) {
 	case 4:
-		return uint64(accessor.Uint32(data))
+		return uint64(accessor.Uint32(p))
 	case 8:
-		return accessor.Uint64(data)
+		return accessor.Uint64(p)
 	}
 	return 0
 }
 
 func (ev *EventWrapper) GetMountNSID() uint64 {
-	return getUint64(ev.MntnsidAccessor, ev.Data)
+	return getUint64(ev.MntnsidAccessor, ev.Payload)
 }
 
 func (ev *EventWrapper) GetNetNSID() uint64 {
-	return getUint64(ev.NetnsidAccessor, ev.Data)
+	return getUint64(ev.NetnsidAccessor, ev.Payload)
 }
 
 func (ev *EventWrapper) SetPodMetadata(container types.Container) {
 	k8s := container.K8sMetadata()
 	if k8s != nil {
 		if ev.namespaceAccessor.IsRequested() {
-			ev.namespaceAccessor.Set(ev.Data, []byte(k8s.Namespace))
+			ev.namespaceAccessor.Set(ev.Payload, []byte(k8s.Namespace))
 		}
 		if ev.podnameAccessor.IsRequested() {
-			ev.podnameAccessor.Set(ev.Data, []byte(k8s.PodName))
+			ev.podnameAccessor.Set(ev.Payload, []byte(k8s.PodName))
 		}
 		if ev.containernameAccessor.IsRequested() {
-			ev.containernameAccessorK8s.Set(ev.Data, []byte(k8s.ContainerName))
+			ev.containernameAccessorK8s.Set(ev.Payload, []byte(k8s.ContainerName))
 		}
 		if ev.hostNetworkAccessor.IsRequested() {
-			ev.hostNetworkAccessor.Set(ev.Data, make([]byte, 1))
+			ev.hostNetworkAccessor.Set(ev.Payload, make([]byte, 1))
 			if container.UsesHostNetwork() {
-				ev.hostNetworkAccessor.PutInt8(ev.Data, 1)
+				ev.hostNetworkAccessor.PutInt8(ev.Payload, 1)
 			}
 		}
 	}
 	rt := container.RuntimeMetadata()
 	if rt != nil {
 		if ev.containernameAccessor.IsRequested() {
-			ev.containernameAccessor.Set(ev.Data, []byte(rt.ContainerName))
+			ev.containernameAccessor.Set(ev.Payload, []byte(rt.ContainerName))
 		}
 		if ev.runtimenameAccessor.IsRequested() {
-			ev.runtimenameAccessor.Set(ev.Data, []byte(rt.RuntimeName))
+			ev.runtimenameAccessor.Set(ev.Payload, []byte(rt.RuntimeName))
 		}
 		if ev.containeridAccessor.IsRequested() {
-			ev.containeridAccessor.Set(ev.Data, []byte(rt.ContainerID))
+			ev.containeridAccessor.Set(ev.Payload, []byte(rt.ContainerID))
 		}
 		if ev.containerimagenameAccessor.IsRequested() {
-			ev.containerimagenameAccessor.Set(ev.Data, []byte(rt.ContainerImageName))
+			ev.containerimagenameAccessor.Set(ev.Payload, []byte(rt.ContainerImageName))
 		}
 		if ev.containerimagedigestAccessor.IsRequested() {
-			ev.containerimagedigestAccessor.Set(ev.Data, []byte(rt.ContainerImageDigest))
+			ev.containerimagedigestAccessor.Set(ev.Payload, []byte(rt.ContainerImageDigest))
 		}
 	}
 }
@@ -295,5 +295,5 @@ func (ev *EventWrapper) SetContainerMetadata(container types.Container) {
 }
 
 func (ev *EventWrapper) SetNode(node string) {
-	ev.nodeAccessor.Set(ev.Data, []byte(node))
+	ev.nodeAccessor.Set(ev.Payload, []byte(node))
 }

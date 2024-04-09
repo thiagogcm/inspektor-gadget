@@ -149,7 +149,7 @@ func (t *Tracer) receiveEventsFromRingReader(gadgetCtx operators.GadgetContext) 
 			lastSlowLen = len(rec.RawSample)
 			sample = slowBuf
 		}
-		err = t.accessor.Set(data, sample)
+		err = t.accessor.Set(data.Get(), sample)
 		if err != nil {
 			gadgetCtx.Logger().Warnf("error setting buffer: %v", err)
 			t.ds.Release(data)
@@ -185,7 +185,7 @@ func (t *Tracer) receiveEventsFromPerfReader(gadgetCtx operators.GadgetContext) 
 			lastSlowLen = len(rec.RawSample)
 			sample = slowBuf
 		}
-		err = t.accessor.Set(data, sample)
+		err = t.accessor.Set(data.Get(), sample)
 		if err != nil {
 			gadgetCtx.Logger().Warnf("error setting buffer: %v", err)
 			t.ds.Release(data)
