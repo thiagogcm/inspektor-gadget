@@ -80,7 +80,7 @@ func main() {
 	hiddenColumnTags := []string{"kubernetes"}
 	common.AddCommandsFromRegistry(rootCmd, runtime, hiddenColumnTags)
 
-	common.AddPersistenceCommands(rootCmd, runtime, nil, nil)
+	common.AddPersistenceCommands(rootCmd, runtime)
 	rootCmd.AddCommand(common.NewSyncCommand(runtime))
 	rootCmd.AddCommand(common.NewRunCommand(rootCmd, runtime, hiddenColumnTags))
 
