@@ -21,17 +21,10 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/inspektor-gadget/inspektor-gadget/pkg/utils/runner"
-
-	"github.com/inspektor-gadget/inspektor-gadget/cmd/common/frontends/console"
 	"github.com/inspektor-gadget/inspektor-gadget/pkg/columns"
 	"github.com/inspektor-gadget/inspektor-gadget/pkg/columns/ellipsis"
 	"github.com/inspektor-gadget/inspektor-gadget/pkg/columns/formatter/textcolumns"
-	gadgetregistry "github.com/inspektor-gadget/inspektor-gadget/pkg/gadget-registry"
 	"github.com/inspektor-gadget/inspektor-gadget/pkg/gadget-service/api"
-	"github.com/inspektor-gadget/inspektor-gadget/pkg/gadgets"
-	"github.com/inspektor-gadget/inspektor-gadget/pkg/logger"
-	"github.com/inspektor-gadget/inspektor-gadget/pkg/operators"
 	"github.com/inspektor-gadget/inspektor-gadget/pkg/params"
 	grpcruntime "github.com/inspektor-gadget/inspektor-gadget/pkg/runtime/grpc"
 )
@@ -99,6 +92,9 @@ func AddPersistenceCommands(
 				MaxWidth:     12,
 				MinWidth:     12,
 			}, func(g *GadgetInfo) any {
+				if g.pg == nil {
+					return ""
+				}
 				return g.pg.Id[:12]
 			})
 			cols.MustAddColumn(columns.Attributes{
@@ -107,6 +103,9 @@ func AddPersistenceCommands(
 				EllipsisType: ellipsis.End,
 				Order:        20,
 			}, func(g *GadgetInfo) any {
+				if g.pg == nil {
+					return ""
+				}
 				return g.pg.Name
 			})
 			cols.MustAddColumn(columns.Attributes{
@@ -115,6 +114,9 @@ func AddPersistenceCommands(
 				EllipsisType: ellipsis.End,
 				Order:        30,
 			}, func(g *GadgetInfo) any {
+				if g.pg == nil {
+					return ""
+				}
 				return strings.Join(g.pg.Tags, ",")
 			})
 			cols.MustAddColumn(columns.Attributes{
@@ -123,16 +125,19 @@ func AddPersistenceCommands(
 				EllipsisType: ellipsis.End,
 				Order:        50,
 			}, func(g *GadgetInfo) any {
-				return fmt.Sprintf("builtin://%s/%s", g.pg.GadgetInfo.GadgetCategory, g.pg.GadgetInfo.GadgetName)
+				if g.pg == nil {
+					return ""
+				}
+				return g.pg.GadgetInfo.ImageName
 			})
-			cols.MustAddColumn(columns.Attributes{
-				Name:         "Nodes",
-				Visible:      true,
-				EllipsisType: ellipsis.End,
-				Order:        60,
-			}, func(g *GadgetInfo) any {
-				return strings.Join(g.pg.GadgetInfo.Nodes, ",")
-			})
+			// cols.MustAddColumn(columns.Attributes{
+			// 	Name:         "Nodes",
+			// 	Visible:      true,
+			// 	EllipsisType: ellipsis.End,
+			// 	Order:        60,
+			// }, func(g *GadgetInfo) any {
+			// 	return strings.Join(g.pg.GadgetInfo.Nodes, ",")
+			// })
 
 			formatter := textcolumns.NewFormatter(cols.GetColumnMap())
 			fmt.Println(formatter.FormatHeader())
@@ -145,7 +150,7 @@ func AddPersistenceCommands(
 				gi := &GadgetInfo{pg: gadget}
 				fmt.Println(formatter.FormatEntry(gi))
 				if showDetails {
-					for k, v := range gi.pg.GadgetInfo.Params {
+					for k, v := range gi.pg.GadgetInfo.ParamValues {
 						if len(v) > 128 {
 							v = v[:128] + "…"
 						}
@@ -213,137 +218,138 @@ func AddPersistenceCommands(
 				return fmt.Errorf("missing id")
 			}
 
-			gadgetInstanceID := args[0]
-
-			gadgetInstance, err := findGadgetInstance(gadgetInstanceID)
-			if err != nil {
-				return fmt.Errorf("finding gadget: %w", err)
-			}
-			if gadgetInstance == nil {
-				return fmt.Errorf("gadget instance %q not found", gadgetInstanceID)
-			}
-
-			// Prepare a lightweight version from the persistent gadget information
-
-			// Lookup gadget desc
-			gadgetDesc := gadgetregistry.Get(gadgetInstance.GadgetInfo.GadgetCategory,
-				gadgetInstance.GadgetInfo.GadgetName)
-			if gadgetDesc == nil {
-				return fmt.Errorf("gadget not supported")
-			}
-
-			// Instantiate parser - this is important to do, because we might apply filters and such to this instance
-			parser := gadgetDesc.Parser()
-			if parser != nil && columnFilters != nil {
-				parser.SetColumnFilters(columnFilters...)
-			}
-
-			gadgetParams := gadgetDesc.ParamDescs().ToParams()
-
-			// Add params matching the gadget type
-			gadgetParams.Add(*gadgets.GadgetParams(gadgetDesc, gadgetDesc.Type(), parser).ToParams()...) // TODO: Check gtype
-
-			validOperators := operators.GetOperatorsForGadget(gadgetDesc)
-			operatorParamCollection := validOperators.ParamCollection()
-
-			err = gadgets.ParamsFromMap(
-				gadgetInstance.GadgetInfo.Params,
-				gadgetParams,
-				runtimeParams,
-				operatorParamCollection,
-			)
-			if err != nil {
-				return err
-			}
-
-			// manually remove persistent flag, otherwise this would spawn another instance
-			runtimeParams.Set(grpcruntime.ParamDetachable, "false")
-
-			var outputMode string
-			outputFormats := gadgets.OutputFormats{}
-			defaultOutputFormat := handleOutputFormats(outputFormats, gadgetDesc, gadgetParams, parser)
-
-			outputFormatsHelp := buildOutputFormatsHelp(outputFormats)
-
-			cmd.PersistentFlags().StringVarP(
-				&outputMode,
-				"output",
-				"o",
-				defaultOutputFormat,
-				strings.Join(outputFormatsHelp, "\n")+"\n\n",
-			)
-
-			if c, ok := gadgetDesc.(gadgets.GadgetDescCustomParser); ok {
-				var err error
-				parser, err = c.CustomParser(gadgetParams, cmd.Flags().Args())
-				if err != nil {
-					return fmt.Errorf("calling custom parser: %w", err)
-				}
-			}
-
-			if parser != nil {
-				if columnFilters != nil {
-					parser.SetColumnFilters(columnFilters...)
-				}
-
-				outputFormats.Append(buildColumnsOutputFormat(gadgetParams, parser))
-				outputFormatsHelp := buildOutputFormatsHelp(outputFormats)
-				cmd.PersistentFlags().Lookup("output").Usage = strings.Join(outputFormatsHelp, "\n") + "\n\n"
-				cmd.PersistentFlags().Lookup("output").DefValue = "columns"
-			}
-
-			cmd.DisableFlagParsing = false
-			err = cmd.ParseFlags(args)
-			if err != nil {
-				return err
-			}
-
-			if showHelp, _ := cmd.Flags().GetBool("help"); showHelp {
-				return cmd.Help()
-			}
-
-			outputModeInfo := strings.SplitN(outputMode, "=", 2)
-			outputModeName := outputModeInfo[0]
-			outputModeParams := ""
-			if len(outputModeInfo) > 1 {
-				outputModeParams = outputModeInfo[1]
-			}
-
-			err = runtime.Init(runtimeGlobalParams)
-			if err != nil {
-				return fmt.Errorf("initializing runtime: %w", err)
-			}
-			defer runtime.Close()
-
-			err = validOperators.Init(operators.GlobalParamsCollection())
-			if err != nil {
-				return fmt.Errorf("initializing operators: %w", err)
-			}
-			defer validOperators.Close()
-
-			fe := console.NewFrontend()
-			defer fe.Close()
-
-			ctx := fe.GetContext()
-
-			return runner.PrepareAndRunGadget(
-				ctx,
-				gadgetInstance.Id,
-				runtime,
-				runtimeParams,
-				gadgetDesc,
-				gadgetParams,
-				cmd.Flags().Args(),
-				validOperators,
-				operatorParamCollection,
-				parser,
-				logger.DefaultLogger(),
-				0,
-				outputModeName,
-				outputModeParams,
-				fe,
-				[]string{}, // TODO: should we implement local filtering as well?
-			)
+			// gadgetInstanceID := args[0]
+			//
+			// gadgetInstance, err := findGadgetInstance(gadgetInstanceID)
+			// if err != nil {
+			// 	return fmt.Errorf("finding gadget: %w", err)
+			// }
+			// if gadgetInstance == nil {
+			// 	return fmt.Errorf("gadget instance %q not found", gadgetInstanceID)
+			// }
+			//
+			// // Prepare a lightweight version from the persistent gadget information
+			//
+			// // Lookup gadget desc
+			// gadgetDesc := gadgetregistry.Get(gadgetInstance.GadgetInfo.GadgetCategory,
+			// 	gadgetInstance.GadgetInfo.GadgetName)
+			// if gadgetDesc == nil {
+			// 	return fmt.Errorf("gadget not supported")
+			// }
+			//
+			// // Instantiate parser - this is important to do, because we might apply filters and such to this instance
+			// parser := gadgetDesc.Parser()
+			// if parser != nil && columnFilters != nil {
+			// 	parser.SetColumnFilters(columnFilters...)
+			// }
+			//
+			// gadgetParams := gadgetDesc.ParamDescs().ToParams()
+			//
+			// // Add params matching the gadget type
+			// gadgetParams.Add(*gadgets.GadgetParams(gadgetDesc, gadgetDesc.Type(), parser).ToParams()...) // TODO: Check gtype
+			//
+			// validOperators := operators.GetOperatorsForGadget(gadgetDesc)
+			// operatorParamCollection := validOperators.ParamCollection()
+			//
+			// err = gadgets.ParamsFromMap(
+			// 	gadgetInstance.GadgetInfo.Params,
+			// 	gadgetParams,
+			// 	runtimeParams,
+			// 	operatorParamCollection,
+			// )
+			// if err != nil {
+			// 	return err
+			// }
+			//
+			// // manually remove persistent flag, otherwise this would spawn another instance
+			// runtimeParams.Set(grpcruntime.ParamDetachable, "false")
+			//
+			// var outputMode string
+			// outputFormats := gadgets.OutputFormats{}
+			// defaultOutputFormat := handleOutputFormats(outputFormats, gadgetDesc, gadgetParams, parser)
+			//
+			// outputFormatsHelp := buildOutputFormatsHelp(outputFormats)
+			//
+			// cmd.PersistentFlags().StringVarP(
+			// 	&outputMode,
+			// 	"output",
+			// 	"o",
+			// 	defaultOutputFormat,
+			// 	strings.Join(outputFormatsHelp, "\n")+"\n\n",
+			// )
+			//
+			// if c, ok := gadgetDesc.(gadgets.GadgetDescCustomParser); ok {
+			// 	var err error
+			// 	parser, err = c.CustomParser(gadgetParams, cmd.Flags().Args())
+			// 	if err != nil {
+			// 		return fmt.Errorf("calling custom parser: %w", err)
+			// 	}
+			// }
+			//
+			// if parser != nil {
+			// 	if columnFilters != nil {
+			// 		parser.SetColumnFilters(columnFilters...)
+			// 	}
+			//
+			// 	outputFormats.Append(buildColumnsOutputFormat(gadgetParams, parser))
+			// 	outputFormatsHelp := buildOutputFormatsHelp(outputFormats)
+			// 	cmd.PersistentFlags().Lookup("output").Usage = strings.Join(outputFormatsHelp, "\n") + "\n\n"
+			// 	cmd.PersistentFlags().Lookup("output").DefValue = "columns"
+			// }
+			//
+			// cmd.DisableFlagParsing = false
+			// err = cmd.ParseFlags(args)
+			// if err != nil {
+			// 	return err
+			// }
+			//
+			// if showHelp, _ := cmd.Flags().GetBool("help"); showHelp {
+			// 	return cmd.Help()
+			// }
+			//
+			// outputModeInfo := strings.SplitN(outputMode, "=", 2)
+			// outputModeName := outputModeInfo[0]
+			// outputModeParams := ""
+			// if len(outputModeInfo) > 1 {
+			// 	outputModeParams = outputModeInfo[1]
+			// }
+			//
+			// err = runtime.Init(runtimeGlobalParams)
+			// if err != nil {
+			// 	return fmt.Errorf("initializing runtime: %w", err)
+			// }
+			// defer runtime.Close()
+			//
+			// err = validOperators.Init(operators.GlobalParamsCollection())
+			// if err != nil {
+			// 	return fmt.Errorf("initializing operators: %w", err)
+			// }
+			// defer validOperators.Close()
+			//
+			// fe := console.NewFrontend()
+			// defer fe.Close()
+			//
+			// ctx := fe.GetContext()
+			//
+			// return runner.PrepareAndRunGadget(
+			// 	ctx,
+			// 	gadgetInstance.Id,
+			// 	runtime,
+			// 	runtimeParams,
+			// 	gadgetDesc,
+			// 	gadgetParams,
+			// 	cmd.Flags().Args(),
+			// 	validOperators,
+			// 	operatorParamCollection,
+			// 	parser,
+			// 	logger.DefaultLogger(),
+			// 	0,
+			// 	outputModeName,
+			// 	outputModeParams,
+			// 	fe,
+			// 	[]string{}, // TODO: should we implement local filtering as well?
+			// )
+			return nil
 		},
 	}
 	AddFlags(attachCmd, runtimeParams, nil, runtime)

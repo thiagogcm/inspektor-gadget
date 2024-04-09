@@ -17,6 +17,7 @@ package gadgetservice
 import (
 	"context"
 	"fmt"
+	"strings"
 	"sync"
 
 	"google.golang.org/protobuf/proto"
@@ -32,6 +33,15 @@ import (
 func (s *Service) GetGadgetInfo(ctx context.Context, req *api.GetGadgetInfoRequest) (*api.GetGadgetInfoResponse, error) {
 	if req.Version != api.VersionGadgetInfo {
 		return nil, fmt.Errorf("expected version to be %d, got %d", api.VersionGadgetInfo, req.Version)
+	}
+
+	if strings.HasPrefix(req.ImageName, "attach:") {
+		id := strings.TrimPrefix(req.ImageName, "attach:")
+		gi := s.instanceMgr.GetGadgetInstanceR(id)
+		if gi == nil {
+			return nil, fmt.Errorf("instance %s not found", id)
+		}
+		return &api.GetGadgetInfoResponse{GadgetInfo: gi.GadgetInfo()}, nil
 	}
 
 	// Get all available operators
@@ -53,6 +63,11 @@ func (s *Service) RunGadget(runGadget api.GadgetManager_RunGadgetServer) error {
 	ctrl, err := runGadget.Recv()
 	if err != nil {
 		return err
+	}
+
+	attachRequest := ctrl.GetAttachRequest()
+	if attachRequest != nil {
+		return s.instanceMgr.AttachToGadgetInstance(attachRequest.Id, runGadget)
 	}
 
 	ociRequest := ctrl.GetRunRequest()

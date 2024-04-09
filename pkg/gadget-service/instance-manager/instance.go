@@ -16,21 +16,18 @@ package instancemanager
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"sync"
-	"time"
 
-	"github.com/google/uuid"
 	log "github.com/sirupsen/logrus"
+	"google.golang.org/protobuf/proto"
 
+	"github.com/inspektor-gadget/inspektor-gadget/pkg/datasource"
 	gadgetcontext "github.com/inspektor-gadget/inspektor-gadget/pkg/gadget-context"
-	gadgetregistry "github.com/inspektor-gadget/inspektor-gadget/pkg/gadget-registry"
 	"github.com/inspektor-gadget/inspektor-gadget/pkg/gadget-service/api"
-	"github.com/inspektor-gadget/inspektor-gadget/pkg/gadgets"
-	runTypes "github.com/inspektor-gadget/inspektor-gadget/pkg/gadgets/run/types"
 	"github.com/inspektor-gadget/inspektor-gadget/pkg/logger"
 	"github.com/inspektor-gadget/inspektor-gadget/pkg/operators"
+	"github.com/inspektor-gadget/inspektor-gadget/pkg/operators/simple"
 	"github.com/inspektor-gadget/inspektor-gadget/pkg/runtime"
 )
 
@@ -42,10 +39,17 @@ const (
 	stateError
 )
 
+type bufferedEvent struct {
+	datasourceID uint32
+	payload      []byte
+}
+
 type GadgetInstance struct {
 	request         *api.GadgetRunRequest
 	mu              sync.Mutex
-	eventBuffer     [][]byte
+	gadgetInfo      *api.GadgetEvent
+	gadgetInfoRaw   *api.GadgetInfo
+	eventBuffer     []*bufferedEvent
 	eventBufferOffs int
 	eventOverflow   bool
 	results         runtime.CombinedGadgetResult
@@ -56,12 +60,17 @@ type GadgetInstance struct {
 	error           error
 }
 
+func (p *GadgetInstance) GadgetInfo() *api.GadgetInfo {
+	return p.gadgetInfoRaw
+}
+
 func (p *GadgetInstance) AddClient(client api.GadgetManager_AttachToGadgetInstanceServer) {
 	log.Debugf("adding client")
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	cl := NewGadgetInstanceClient(client)
 	p.clients[cl] = struct{}{}
+	client.Send(p.gadgetInfo)
 	// TODO: Replay
 	go func() {
 		cl.Run()
@@ -77,117 +86,108 @@ func (p *GadgetInstance) RunGadget(
 	logger logger.Logger,
 	request *api.GadgetRunRequest,
 ) error {
-	gadgetDesc := gadgetregistry.Get(request.GadgetCategory, request.GadgetName)
-	if gadgetDesc == nil {
-		return fmt.Errorf("gadget not found: %s/%s", request.GadgetCategory, request.GadgetName)
+	if request.Version != api.VersionGadgetRunProtocol {
+		return fmt.Errorf("expected version to be %d, got %d", api.VersionGadgetRunProtocol, request.Version)
 	}
 
-	// Initialize Operators
-	err := operators.GetAll().Init(operators.GlobalParamsCollection())
-	if err != nil {
-		return fmt.Errorf("initialize operators: %w", err)
-	}
+	done := make(chan bool)
+	defer func() {
+		done <- true
+	}()
 
-	ops := operators.GetOperatorsForGadget(gadgetDesc)
+	// Build a simple operator that subscribes to all events and forwards them
+	svc := simple.New("svc",
+		simple.WithPriority(50000),
+		simple.OnInit(func(gadgetCtx operators.GadgetContext) error {
+			// Create payload buffer
+			// go func() {
+			// 	// Receive control messages
+			// 	for {
+			// 		msg, err := runGadget.Recv()
+			// 		if err != nil {
+			// 			s.logger.Warnf("error on connection: %v", err)
+			// 			gadgetCtx.Cancel()
+			// 			return
+			// 		}
+			// 		switch msg.Event.(type) {
+			// 		case *api.GadgetControlRequest_StopRequest:
+			// 			log.Debugf("received stop request")
+			// 			gadgetCtx.Cancel()
+			// 			return
+			// 		default:
+			// 			logger.Warn("received unexpected request")
+			// 		}
+			// 	}
+			// }()
 
-	parser := gadgetDesc.Parser()
-
-	operatorParams := ops.ParamCollection()
-	runtimeParams := runtime.ParamDescs().ToParams()
-	gadgetParamDescs := gadgetDesc.ParamDescs()
-
-	gType := gadgetDesc.Type()
-	// TODO: do we need to update gType before calling this?
-	gadgetParamDescs.Add(gadgets.GadgetParams(gadgetDesc, gType, parser)...)
-	gadgetParams := gadgetParamDescs.ToParams()
-
-	err = gadgets.ParamsFromMap(request.Params, gadgetParams, runtimeParams, operatorParams)
-	if err != nil {
-		return fmt.Errorf("setting parameters: %w", err)
-	}
-
-	var gadgetInfo *runTypes.GadgetInfo
-
-	if c, ok := gadgetDesc.(runTypes.RunGadgetDesc); ok {
-		gadgetInfo, err = runtime.GetGadgetInfo(ctx, gadgetDesc, gadgetParams, request.Args)
-		if err != nil {
-			return fmt.Errorf("getting gadget info: %w", err)
-		}
-		parser, err = c.CustomParser(gadgetInfo)
-		if err != nil {
-			return fmt.Errorf("calling custom parser: %w", err)
-		}
-
-		// Update gadget parameters to take ebpf params into consideration
-		for _, p := range gadgetInfo.GadgetMetadata.EBPFParams {
-			p := p
-			gadgetParamDescs.Add(&p.ParamDesc)
-		}
-		gadgetParams = gadgetParamDescs.ToParams()
-		err = gadgetParams.CopyFromMap(request.Params, "")
-		if err != nil {
-			return fmt.Errorf("setting parameters: %w", err)
-		}
-
-	}
-
-	if parser != nil {
-		outputDone := make(chan bool)
-		defer func() {
-			outputDone <- true
-		}()
-
-		parser.SetLogCallback(logger.Logf)
-		parser.SetEventCallback(func(ev any) {
-			data, _ := json.Marshal(ev)
-
-			p.mu.Lock()
-			p.eventBuffer[p.eventBufferOffs] = data
-			p.eventBufferOffs = (p.eventBufferOffs + 1) % len(p.eventBuffer)
-			if p.eventBufferOffs == 0 {
-				p.eventOverflow = true
+			gi, err := gadgetCtx.SerializeGadgetInfo()
+			if err != nil {
+				return fmt.Errorf("serializing gadget info: %w", err)
 			}
-			for client := range p.clients {
-				// This doesn't block
-				client.SendPayload(data)
+
+			// datasource mapping; we're sending an array of available DataSources including a
+			// DataSourceID; this ID will be used when sending actual data and needs to be remapped
+			// to the actual DataSource on the client later on
+			dsLookup := make(map[string]uint32)
+			for i, ds := range gi.DataSources {
+				ds.Id = uint32(i)
+				dsLookup[ds.Name] = ds.Id
 			}
-			p.mu.Unlock()
-		})
+
+			// todo: skip DataSources we're not interested in
+
+			for _, ds := range gadgetCtx.GetDataSources() {
+				dsID := dsLookup[ds.Name()]
+				ds.Subscribe(func(ds datasource.DataSource, data datasource.Data) error {
+					d, _ := proto.Marshal(data.Raw())
+
+					event := &bufferedEvent{
+						payload:      d,
+						datasourceID: dsID,
+					}
+
+					p.eventBuffer[p.eventBufferOffs] = event
+					p.eventBufferOffs = (p.eventBufferOffs + 1) % len(p.eventBuffer)
+					if p.eventBufferOffs == 0 {
+						p.eventOverflow = true
+					}
+					for client := range p.clients {
+						// This doesn't block
+						client.SendPayload(dsID, d)
+					}
+					return nil
+				}, 1000000) // TODO: static int?
+			}
+
+			p.gadgetInfoRaw = gi
+			d, _ := proto.Marshal(gi)
+			p.gadgetInfo = &api.GadgetEvent{
+				Type:    api.EventTypeGadgetInfo,
+				Payload: d,
+			}
+			return nil
+		}),
+	)
+
+	ops := make([]operators.DataOperator, 0)
+	for _, op := range operators.GetDataOperators() {
+		ops = append(ops, op)
 	}
+	ops = append(ops, svc)
 
-	// Assign a unique ID - this will be used in the future
-	runID := uuid.New().String()
-
-	// Create new Gadget Context
 	gadgetCtx := gadgetcontext.New(
 		ctx,
-		runID,
-		runtime,
-		runtimeParams,
-		gadgetDesc,
-		gadgetParams,
-		request.Args,
-		operatorParams,
-		parser,
-		logger,
-		time.Duration(request.Timeout),
-		gadgetInfo,
+		request.ImageName,
+		gadgetcontext.WithLogger(logger),
+		gadgetcontext.WithDataOperators(ops...),
 	)
-	defer gadgetCtx.Cancel()
 
-	p.gadgetCtx = gadgetCtx
+	runtimeParams := runtime.ParamDescs().ToParams()
+	runtimeParams.CopyFromMap(request.ParamValues, "runtime.")
 
-	// Hand over to runtime
-	results, err := runtime.RunGadget(gadgetCtx)
+	err := runtime.RunGadget(gadgetCtx, runtimeParams, request.ParamValues)
 	if err != nil {
-		return fmt.Errorf("running gadget: %w", err)
+		return err
 	}
-
-	// Send result, if any
-	p.mu.Lock()
-	p.results = results
-	p.state = statePaused
-	p.mu.Unlock()
-
 	return nil
 }

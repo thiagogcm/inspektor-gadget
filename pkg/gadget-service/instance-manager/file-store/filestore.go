@@ -166,6 +166,10 @@ func (s *FileStore) RemoveGadgetInstance(ctx context.Context, request *api.Gadge
 	}
 
 	log.Debugf("removing gadget %q", request.Id)
+	err = s.instanceMgr.RemoveGadget(request.Id)
+	if err != nil {
+		return &api.StatusResponse{Result: 1, Message: err.Error()}, nil
+	}
 	err = os.Remove(path)
 	if err != nil {
 		return &api.StatusResponse{Result: 1, Message: err.Error()}, nil

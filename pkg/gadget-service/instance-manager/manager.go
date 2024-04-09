@@ -102,7 +102,7 @@ func (p *Manager) RunGadget(
 	ctx, cancel := context.WithCancel(context.Background())
 	pg := &GadgetInstance{
 		request:         request,
-		eventBuffer:     make([][]byte, 1024),
+		eventBuffer:     make([]*bufferedEvent, 1024),
 		eventBufferOffs: 0,
 		cancel:          cancel,
 		clients:         map[*GadgetInstanceClient]struct{}{},
@@ -128,6 +128,7 @@ func (p *Manager) RunGadget(
 		}()
 		err := pg.RunGadget(ctx, p.runtime, logger.DefaultLogger(), request)
 		if err != nil {
+			log.Errorf("running gadget: %v", err)
 			pg.mu.Lock()
 			pg.state = stateError
 			pg.error = err
@@ -136,9 +137,26 @@ func (p *Manager) RunGadget(
 	}()
 }
 
+func (p *Manager) GetGadgetInstanceR(gadgetInstanceID string) *GadgetInstance {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	gi := p.gadgetInstances[gadgetInstanceID]
+	return gi
+}
+
 func (p *Manager) AttachToGadgetInstance(
-	gadgetInstanceID *api.GadgetInstanceId, stream api.GadgetManager_AttachToGadgetInstanceServer,
+	gadgetInstanceID string, stream api.GadgetManager_AttachToGadgetInstanceServer,
 ) error {
+	p.mu.Lock()
+	gi, ok := p.gadgetInstances[gadgetInstanceID]
+	p.mu.Unlock()
+	if !ok {
+		return fmt.Errorf("gadget not found")
+	}
+
+	gi.AddClient(stream)
+
+	<-stream.Context().Done()
 	return nil
 }
 

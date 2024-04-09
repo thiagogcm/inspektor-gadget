@@ -49,12 +49,13 @@ func (c *GadgetInstanceClient) Run() {
 	// TODO: remove from trace
 }
 
-func (c *GadgetInstanceClient) SendPayload(payload []byte) {
+func (c *GadgetInstanceClient) SendPayload(datasourceID uint32, payload []byte) {
 	c.seq++
 	event := &api.GadgetEvent{
-		Type:    api.EventTypeGadgetPayload,
-		Payload: payload,
-		Seq:     c.seq,
+		Type:         api.EventTypeGadgetPayload,
+		DataSourceID: datasourceID,
+		Payload:      payload,
+		Seq:          c.seq,
 	}
 	select {
 	case c.buffer <- event:

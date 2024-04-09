@@ -72,6 +72,10 @@ message GadgetRunRequest {
   int64 timeout = 13;
 }
 
+message GadgetAttachRequest {
+  string id = 1;
+}
+
 message BuiltInGadgetStopRequest {
 }
 
@@ -97,6 +101,7 @@ message GadgetControlRequest {
   oneof Event {
     GadgetRunRequest runRequest = 1;
     GadgetStopRequest stopRequest = 2;
+    GadgetAttachRequest attachRequest = 3;
   }
 }
 

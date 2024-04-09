@@ -69,10 +69,10 @@ func (r *Runtime) GetGadgetInstances(ctx context.Context, runtimeParams *params.
 	return res.GadgetInstances, nil
 }
 
-func (r *Runtime) installGadgetInstance(gadgetCtx runtime.GadgetContext, paramMap map[string]string) error {
+func (r *Runtime) installGadgetInstance(gadgetCtx runtime.GadgetContext, runtimeParams *params.Params, paramValues map[string]string) error {
 	gadgetCtx.Logger().Debugf("installing persistent gadget")
 
-	conn, err := r.getConnToRandomTarget(gadgetCtx.Context(), gadgetCtx.RuntimeParams())
+	conn, err := r.getConnToRandomTarget(gadgetCtx.Context(), runtimeParams)
 	if err != nil {
 		return err
 	}
@@ -80,12 +80,12 @@ func (r *Runtime) installGadgetInstance(gadgetCtx runtime.GadgetContext, paramMa
 
 	res, err := client.InstallGadgetInstance(gadgetCtx.Context(), &api.InstallGadgetInstanceRequest{
 		GadgetInstance: &api.GadgetInstance{
-			Name: gadgetCtx.RuntimeParams().Get(ParamName).AsString(),
-			Tags: strings.Split(gadgetCtx.RuntimeParams().Get(ParamTags).AsString(), ","),
+			Name: runtimeParams.Get(ParamName).AsString(),
+			Tags: strings.Split(runtimeParams.Get(ParamTags).AsString(), ","),
 			GadgetInfo: &api.GadgetRunRequest{
-				GadgetName:     gadgetCtx.GadgetDesc().Name(),
-				GadgetCategory: gadgetCtx.GadgetDesc().Category(),
-				Params:         paramMap,
+				ImageName:   gadgetCtx.ImageName(),
+				ParamValues: paramValues,
+				Version:     api.VersionGadgetRunProtocol,
 			},
 		},
 		EventBufferLength: 0,
