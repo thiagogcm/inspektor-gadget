@@ -81,17 +81,20 @@ func (i *ebpfInstance) initEnumConverter(gadgetCtx operators.GadgetContext) erro
 			}
 
 			converter := func(ds datasource.DataSource, data datasource.Data) error {
-				// TODO: lookup table?
-				p := data.Get()
-				inBytes := in.Get(p)
-				val := byteSliceAsUint64(inBytes, enum.Signed, ds)
-				for _, v := range enum.Values {
-					if val == v.Value {
-						out.Set(p, []byte(v.Name))
-						return nil
+				iter := data.Iterate()
+				for iter.Next() {
+					// TODO: lookup table?
+					p := iter.Payload
+					inBytes := in.Get(p)
+					val := byteSliceAsUint64(inBytes, enum.Signed, ds)
+					for _, v := range enum.Values {
+						if val == v.Value {
+							out.Set(p, []byte(v.Name))
+							return nil
+						}
 					}
+					out.Set(p, []byte("UNKNOWN"))
 				}
-				out.Set(p, []byte("UNKNOWN"))
 				return nil
 			}
 

@@ -180,13 +180,24 @@ func (r *Runtime) runGadget(gadgetCtx runtime.GadgetContext, target target, allP
 				}
 				expectedSeq = ev.Seq + 1
 				if ds, ok := dsMap[ev.DataSourceID]; ok && ds != nil {
-					d := ds.NewData()
+					var d datasource.Data
+					switch ds.Type() {
+					case datasource.TypeEvent:
+						d = ds.NewDataEvent()
+					case datasource.TypeArray:
+						d = ds.NewDataArray()
+					default:
+						gadgetCtx.Logger().Warnf("unknown datasource type %d", ds.Type())
+						continue
+					}
 					err := proto.Unmarshal(ev.Payload, d.Raw())
 					if err != nil {
 						gadgetCtx.Logger().Debugf("error unmarshaling payload: %v", err)
 						continue
 					}
-					ds.EmitAndRelease(d)
+					if err := ds.EmitAndRelease(d); err != nil {
+						gadgetCtx.Logger().Warnf("error emitting data: %v", err)
+					}
 				}
 			case api.EventTypeGadgetResult:
 				gadgetCtx.Logger().Debugf("%-20s | got result from server", target.node)

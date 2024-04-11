@@ -126,6 +126,19 @@ func (t *Tracer) receiveEvents(gadgetCtx operators.GadgetContext) error {
 	}
 }
 
+func (t *Tracer) emitData(rawData []byte) error {
+	data := t.ds.NewDataEvent()
+	if err := t.accessor.Set(data.Get(), rawData); err != nil {
+		t.ds.Release(data)
+		return fmt.Errorf("setting data payload: %w", err)
+
+	}
+	if err := t.ds.EmitAndRelease(data); err != nil {
+		return fmt.Errorf("emitting and releasing data: %w", err)
+	}
+	return nil
+}
+
 func (t *Tracer) receiveEventsFromRingReader(gadgetCtx operators.GadgetContext) error {
 	slowBuf := make([]byte, t.eventSize)
 	lastSlowLen := 0
@@ -134,7 +147,7 @@ func (t *Tracer) receiveEventsFromRingReader(gadgetCtx operators.GadgetContext) 
 		if err != nil {
 			return err
 		}
-		data := t.ds.NewData()
+
 		sample := rec.RawSample
 		if uint32(len(rec.RawSample)) < t.eventSize {
 			// event is truncated; we need to copy
@@ -149,15 +162,9 @@ func (t *Tracer) receiveEventsFromRingReader(gadgetCtx operators.GadgetContext) 
 			lastSlowLen = len(rec.RawSample)
 			sample = slowBuf
 		}
-		err = t.accessor.Set(data.Get(), sample)
-		if err != nil {
-			gadgetCtx.Logger().Warnf("error setting buffer: %v", err)
-			t.ds.Release(data)
-			continue
-		}
-		err = t.ds.EmitAndRelease(data)
-		if err != nil {
-			gadgetCtx.Logger().Warnf("error emitting data: %v", err)
+
+		if err = t.emitData(sample); err != nil {
+			gadgetCtx.Logger().Warnf("error emitting event: %v", err)
 		}
 	}
 }
@@ -170,7 +177,7 @@ func (t *Tracer) receiveEventsFromPerfReader(gadgetCtx operators.GadgetContext) 
 		if err != nil {
 			return err
 		}
-		data := t.ds.NewData()
+
 		sample := rec.RawSample
 		if uint32(len(rec.RawSample)) < t.eventSize {
 			// event is truncated; we need to copy
@@ -185,16 +192,11 @@ func (t *Tracer) receiveEventsFromPerfReader(gadgetCtx operators.GadgetContext) 
 			lastSlowLen = len(rec.RawSample)
 			sample = slowBuf
 		}
-		err = t.accessor.Set(data.Get(), sample)
-		if err != nil {
-			gadgetCtx.Logger().Warnf("error setting buffer: %v", err)
-			t.ds.Release(data)
-			continue
+
+		if err = t.emitData(sample); err != nil {
+			gadgetCtx.Logger().Warnf("error emitting event: %v", err)
 		}
-		err = t.ds.EmitAndRelease(data)
-		if err != nil {
-			gadgetCtx.Logger().Warnf("error emitting data: %v", err)
-		}
+
 		if rec.LostSamples > 0 {
 			t.ds.ReportLostData(rec.LostSamples)
 		}

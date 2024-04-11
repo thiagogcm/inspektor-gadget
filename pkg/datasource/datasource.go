@@ -29,6 +29,7 @@ type Type uint32
 const (
 	TypeUndefined Type = iota
 	TypeEvent
+	TypeArray
 	TypeMetrics
 )
 
@@ -41,13 +42,55 @@ type Payload interface {
 	GetChunk(index uint32, offset uint32, size uint32) []byte
 }
 
+type PayloadIterator struct {
+	// The payloads slice
+	payloads []Payload
+	// The index of the instruction in the original instruction slice
+	index uint32
+	// Payload in question
+	Payload Payload
+}
+
+func (iter *PayloadIterator) Next() bool {
+	if iter.index >= uint32(len(iter.payloads)) {
+		return false
+	}
+	iter.Payload = iter.payloads[iter.index]
+	iter.index++
+	return true
+}
+
 // Data represents the data that is emitted by a DataSource. It is composed
-// of a node, a sequence number and a payload with the actual content.
+// of a node, a sequence number and a payload.
 type Data interface {
 	Raw() protoreflect.ProtoMessage
 	SetNode(string)
 	SetSeq(uint32)
+	// Iterate returns an iterator over the payloads of the data
+	Iterate() *PayloadIterator
+}
+
+type DataEvent interface {
+	Data
+
+	// Get returns the payload of the event, which can be manipulated directly.
 	Get() Payload
+}
+
+type DataArray interface {
+	Data
+
+	// New returns a newly allocated payload. Use AppendPayload to add it to the array.
+	New() Payload
+
+	// Append adds a payload to the array.
+	Append(Payload)
+
+	// Release releases the memory of the payload; Payload may not be used after calling this
+	Release(Payload)
+
+	// Len returns the number of payloads in the array.
+	Len() uint32
 }
 
 // DataFunc is the callback that will be called for Data emitted by a DataSource. Data has to be consumed
@@ -71,10 +114,11 @@ type DataSource interface {
 	// AddField adds a field as a new payload
 	AddField(fieldName string, options ...FieldOption) (FieldAccessor, error)
 
-	// NewData builds a new data structure that can be written to
-	NewData() Data
 	GetField(fieldName string) FieldAccessor
 	GetFieldsWithTag(tag ...string) []FieldAccessor
+
+	NewDataEvent() DataEvent
+	NewDataArray() DataArray
 
 	// EmitAndRelease sends data through the operator chain and releases it afterward;
 	// Data may not be used after calling this. This should only be used in the running phase of the gadget, not

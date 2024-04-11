@@ -49,6 +49,62 @@ func (gp *gData) Get() Payload {
 	return (*payload)(gp.Payload)
 }
 
+func (gp *gData) Iterate() *PayloadIterator {
+	return &PayloadIterator{
+		payloads: []Payload{(*payload)(gp.Payload)},
+	}
+}
+
+type gDataArray struct {
+	*api.GadgetDataArray
+
+	payloadCount uint32
+}
+
+func (gda *gDataArray) Raw() protoreflect.ProtoMessage {
+	return (*api.GadgetDataArray)(gda.GadgetDataArray)
+}
+
+func (gda *gDataArray) SetSeq(seq uint32) {
+	gda.Seq = seq
+}
+
+func (gda *gDataArray) SetNode(node string) {
+	gda.Node = node
+}
+
+func (gda *gDataArray) Iterate() *PayloadIterator {
+	size := len(gda.Payloads)
+	payloads := make([]Payload, 0, size)
+	for _, p := range gda.Payloads {
+		payloads = append(payloads, (*payload)(p))
+	}
+	return &PayloadIterator{
+		payloads: payloads,
+	}
+}
+
+func (gda *gDataArray) New() Payload {
+	p := &payload{
+		Data: make([][]byte, gda.payloadCount),
+	}
+	for i := range p.Data {
+		p.Data[i] = make([]byte, 0)
+	}
+	return p
+}
+
+func (gda *gDataArray) Append(p Payload) {
+	gda.Payloads = append(gda.Payloads, (*api.Payload)(p.(*payload)))
+}
+
+func (gda *gDataArray) Len() uint32 {
+	return uint32(len(gda.Payloads))
+}
+
+func (gda *gDataArray) Release(p Payload) {
+}
+
 type payload api.Payload
 
 func (p *payload) Set(index uint32, data []byte) {
@@ -182,7 +238,7 @@ func (ds *dataSource) Type() Type {
 	return ds.dType
 }
 
-func (ds *dataSource) NewData() Data {
+func (ds *dataSource) NewDataEvent() DataEvent {
 	d := &gData{
 		Payload: &api.Payload{
 			Data: make([][]byte, ds.payloadCount),
@@ -192,6 +248,15 @@ func (ds *dataSource) NewData() Data {
 		d.Payload.Data[i] = make([]byte, 0)
 	}
 	return d
+}
+
+func (ds *dataSource) NewDataArray() DataArray {
+	return &gDataArray{
+		GadgetDataArray: &api.GadgetDataArray{
+			Payloads: make([]*api.Payload, 0),
+		},
+		payloadCount: ds.payloadCount,
+	}
 }
 
 func (ds *dataSource) ByteOrder() binary.ByteOrder {
@@ -406,17 +471,19 @@ func (ds *dataSource) Dump(data Data, wr io.Writer) {
 	ds.lock.RLock()
 	defer ds.lock.RUnlock()
 
-	p := data.Get()
-	for _, f := range ds.fields {
-		if f.Offs+f.Size > uint32(len(p.Get(f.PayloadIndex))) {
-			fmt.Fprintf(wr, "%s (%d): ! invalid size\n", f.Name, f.Size)
-			continue
-		}
-		fmt.Fprintf(wr, "%s (%d) [%s]: ", f.Name, f.Size, strings.Join(f.Tags, " "))
-		if f.Offs > 0 || f.Size > 0 {
-			fmt.Fprintf(wr, "%v\n", p.GetChunk(f.PayloadIndex, f.Offs, f.Size))
-		} else {
-			fmt.Fprintf(wr, "%v\n", p.Get(f.PayloadIndex))
+	iter := data.Iterate()
+	for iter.Next() {
+		for _, f := range ds.fields {
+			if f.Offs+f.Size > uint32(len(iter.Payload.Get(f.PayloadIndex))) {
+				fmt.Fprintf(wr, "%s (%d): ! invalid size\n", f.Name, f.Size)
+				continue
+			}
+			fmt.Fprintf(wr, "%s (%d) [%s]: ", f.Name, f.Size, strings.Join(f.Tags, " "))
+			if f.Offs > 0 || f.Size > 0 {
+				fmt.Fprintf(wr, "%v\n", iter.Payload.GetChunk(f.PayloadIndex, f.Offs, f.Size))
+			} else {
+				fmt.Fprintf(wr, "%v\n", iter.Payload.Get(f.PayloadIndex))
+			}
 		}
 	}
 }

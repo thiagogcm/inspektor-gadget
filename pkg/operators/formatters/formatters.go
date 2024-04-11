@@ -267,7 +267,13 @@ func (f *formattersOperatorInstance) PreStart(gadgetCtx operators.GadgetContext)
 		for _, c := range converters {
 			conv := c
 			ds.Subscribe(func(ds datasource.DataSource, data datasource.Data) error {
-				return conv.replacer(data.Get())
+				iter := data.Iterate()
+				for iter.Next() {
+					if err := conv.replacer(iter.Payload); err != nil {
+						return fmt.Errorf("converting %s: %w", conv.name, err)
+					}
+				}
+				return nil
 			}, conv.priority)
 		}
 	}

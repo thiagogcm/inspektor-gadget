@@ -233,7 +233,10 @@ func (o *cliOperatorInstance) PreStart(gadgetCtx operators.GadgetContext) error 
 			fmt.Println(formatter.FormatHeader())
 
 			ds.Subscribe(func(ds datasource.DataSource, data datasource.Data) error {
-				handler(datasource.NewDataTuple(ds, data.Get()))
+				iter := data.Iterate()
+				for iter.Next() {
+					handler(datasource.NewDataTuple(ds, iter.Payload))
+				}
 				return nil
 			}, Priority)
 		case ModeJSON, ModeJSONPretty, ModeYAML:
@@ -252,7 +255,10 @@ func (o *cliOperatorInstance) PreStart(gadgetCtx operators.GadgetContext) error 
 			}
 
 			df := func(ds datasource.DataSource, data datasource.Data) error {
-				fmt.Println(string(jsonFormatter.Marshal(data.Get())))
+				iter := data.Iterate()
+				for iter.Next() {
+					fmt.Println(string(jsonFormatter.Marshal(iter.Payload)))
+				}
 				return nil
 			}
 
@@ -260,12 +266,15 @@ func (o *cliOperatorInstance) PreStart(gadgetCtx operators.GadgetContext) error 
 				// For the time being, this uses a slow approach to marshal to YAML, by first
 				// converting to JSON and then to YAML. This should get a dedicated formatter sooner or later.
 				df = func(ds datasource.DataSource, data datasource.Data) error {
-					yml, err := yaml.JSONToYAML(jsonFormatter.Marshal(data.Get()))
-					if err != nil {
-						return fmt.Errorf("serializing yaml: %w", err)
+					iter := data.Iterate()
+					for iter.Next() {
+						yml, err := yaml.JSONToYAML(jsonFormatter.Marshal(iter.Payload))
+						if err != nil {
+							return fmt.Errorf("serializing yaml: %w", err)
+						}
+						fmt.Println("---")
+						fmt.Print(string(yml))
 					}
-					fmt.Println("---")
-					fmt.Print(string(yml))
 					return nil
 				}
 			}

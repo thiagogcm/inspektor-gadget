@@ -101,12 +101,15 @@ func Subscribe(
 			EventWrapperBase: wrapper,
 		}
 		ds.Subscribe(func(ds datasource.DataSource, data datasource.Data) error {
-			wr.Payload = data.Get()
-			if wrapper.MntnsidAccessor != nil {
-				mntNsEnrichFunc(&wr)
-			}
-			if wrapper.NetnsidAccessor != nil {
-				netNsEnrichFunc(&wr)
+			iter := data.Iterate()
+			for iter.Next() {
+				wr.Payload = iter.Payload
+				if wrapper.MntnsidAccessor != nil {
+					mntNsEnrichFunc(&wr)
+				}
+				if wrapper.NetnsidAccessor != nil {
+					netNsEnrichFunc(&wr)
+				}
 			}
 			return nil
 		}, priority)
