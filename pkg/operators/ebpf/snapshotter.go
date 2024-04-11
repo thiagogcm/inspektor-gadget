@@ -140,6 +140,8 @@ func (i *ebpfInstance) runSnapshotters() error {
 	for sName, snapshotter := range i.snapshotters {
 		i.logger.Debugf("Running snapshotter %q", sName)
 
+		dataArray := snapshotter.ds.NewDataArray()
+
 		for pName, l := range snapshotter.iterators {
 			i.logger.Debugf("Running iterator %q", pName)
 			switch l.typ {
@@ -156,9 +158,12 @@ func (i *ebpfInstance) runSnapshotters() error {
 				}
 
 				for i := uint32(0); i < uint32(len(buf)); i += size {
-					data := snapshotter.ds.NewData()
-					snapshotter.accessor.Set(data.Get(), buf[i:i+size])
-					snapshotter.ds.EmitAndRelease(data)
+					p := dataArray.New()
+					if err := snapshotter.accessor.Set(p, buf[i:i+size]); err != nil {
+						dataArray.Release(p)
+						return fmt.Errorf("setting data payload %d: %w", i, err)
+					}
+					dataArray.Append(p)
 				}
 			case "tcp", "udp":
 				visitedNetNs := make(map[uint64]struct{})
@@ -188,16 +193,21 @@ func (i *ebpfInstance) runSnapshotters() error {
 						}
 
 						for i := uint32(0); i < uint32(len(buf)); i += size {
-							data := snapshotter.ds.NewData()
-							p := data.Get()
-							snapshotter.accessor.Set(p, buf[i:i+size])
+							p := dataArray.New()
+							if err := snapshotter.accessor.Set(p, buf[i:i+size]); err != nil {
+								dataArray.Release(p)
+								return fmt.Errorf("setting data payload %d: %w", i, err)
+							}
 
 							// TODO: this isn't ideal; make DS reserve memory / clean on demand
 							// instead of allocating in here - or: reserve those 8 bytes in eBPF
-							snapshotter.netns.Set(p, make([]byte, 8))
+							if err := snapshotter.netns.Set(p, make([]byte, 8)); err != nil {
+								dataArray.Release(p)
+								return fmt.Errorf("setting netns data payload %d: %w", i, err)
+							}
 							snapshotter.netns.PutUint64(p, container.Netns)
 
-							snapshotter.ds.EmitAndRelease(data)
+							dataArray.Append(p)
 						}
 
 						return nil
@@ -208,6 +218,15 @@ func (i *ebpfInstance) runSnapshotters() error {
 					}
 				}
 			}
+		}
+
+		if dataArray.Len() == 0 {
+			snapshotter.ds.Release(dataArray)
+			continue
+		}
+
+		if err := snapshotter.ds.EmitAndRelease(dataArray); err != nil {
+			return fmt.Errorf("emitting snapshotter %q data: %w", sName, err)
 		}
 	}
 	return nil
