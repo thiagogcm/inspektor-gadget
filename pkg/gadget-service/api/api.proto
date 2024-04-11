@@ -121,6 +121,14 @@ message GadgetData {
   Payload payload = 3;
 }
 
+// GadgetDataArray can be also send as payload in GadgetEvent message when the
+// data source needs to send multiple payloads in one message.
+message GadgetDataArray {
+  string node = 1;
+  uint32 seq = 2;
+  repeated Payload payloads = 3;
+}
+
 message Param {
   string key = 1;
   string description = 2;
