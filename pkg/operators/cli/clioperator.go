@@ -249,15 +249,28 @@ func (o *cliOperatorInstance) PreStart(gadgetCtx operators.GadgetContext) error 
 				// TODO: compatiblity for now: add all; remove me later on and use the commented version above
 				json.WithShowAll(true),
 				json.WithPretty(o.mode == ModeJSONPretty, "  "),
+				json.WithArray(ds.Type() == datasource.TypeArray),
 			)
 			if err != nil {
 				return fmt.Errorf("initializing JSON formatter: %w", err)
 			}
 
 			df := func(ds datasource.DataSource, data datasource.Data) error {
-				iter := data.Iterate()
-				for iter.Next() {
-					fmt.Println(string(jsonFormatter.Marshal(iter.Payload)))
+				switch ds.Type() {
+				case datasource.TypeEvent:
+					p, ok := data.(datasource.DataEvent)
+					if !ok {
+						return fmt.Errorf("invalid data type for dataSource %q: expected *datasource.gData, got %T",
+							ds.Name(), data)
+					}
+					fmt.Println(string(jsonFormatter.Marshal(p.Get())))
+				case datasource.TypeArray:
+					p, ok := data.(datasource.DataArray)
+					if !ok {
+						return fmt.Errorf("invalid data type for dataSource %q: expected *datasource.gDataArray, got %T",
+							ds.Name(), data)
+					}
+					fmt.Println(string(jsonFormatter.MarshalArray(p.Get())))
 				}
 				return nil
 			}

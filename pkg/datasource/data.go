@@ -105,6 +105,14 @@ func (gda *gDataArray) Len() uint32 {
 func (gda *gDataArray) Release(p Payload) {
 }
 
+func (gda *gDataArray) Get() []Payload {
+	res := make([]Payload, 0, len(gda.Payloads))
+	for _, p := range gda.Payloads {
+		res = append(res, (*payload)(p))
+	}
+	return res
+}
+
 type payload api.Payload
 
 func (p *payload) Set(index uint32, data []byte) {

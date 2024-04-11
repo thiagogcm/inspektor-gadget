@@ -91,6 +91,9 @@ type DataArray interface {
 
 	// Len returns the number of payloads in the array.
 	Len() uint32
+
+	// Get returns the underlying array of payloads.
+	Get() []Payload
 }
 
 // DataFunc is the callback that will be called for Data emitted by a DataSource. Data has to be consumed
